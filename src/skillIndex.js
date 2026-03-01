@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
 
@@ -65,24 +66,39 @@ async function search(intent) {
 
   return entries
     .map((entry) => {
-      const haystack = [
+      // Build haystack from index fields + optionally the SKILL.md content
+      const indexText = [
         entry.intent,
         entry.name,
         entry.domain,
         ...(entry.tags || []),
         ...(entry.frameworks || []),
-      ]
-        .join(" ")
-        .toLowerCase();
+      ].join(" ");
+
+      let skillContent = "";
+      if (entry.filePath) {
+        try {
+          skillContent = readFileSync(entry.filePath, "utf8").slice(0, 3000);
+        } catch { /* file missing, skip */ }
+      }
+
+      const haystack = (indexText + " " + skillContent).toLowerCase();
 
       const haystackTokens = tokenize(haystack);
       const haystackSet = new Set(haystackTokens);
 
       let matches = 0;
       for (const token of intentTokens) {
-        if (haystackSet.has(token)) matches++;
-        else if (haystackTokens.some((t) => t.includes(token) || token.includes(t))) {
+        if (haystackSet.has(token)) {
+          matches++;
+        } else if (haystackTokens.some((t) => t.includes(token) || token.includes(t))) {
           matches += 0.5;
+        } else {
+          // Stem-like fuzzy: share first 4+ chars (price->pricing, market->marketing)
+          const stem = token.slice(0, 4);
+          if (stem.length >= 4 && haystackTokens.some((t) => t.startsWith(stem))) {
+            matches += 0.3;
+          }
         }
       }
 
