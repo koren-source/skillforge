@@ -152,12 +152,15 @@ function extractJson(text) {
 }
 
 function normalizeSynthesis(result, transcripts) {
+  const now = new Date().toISOString();
   return {
     topic: result.topic || "YouTube Knowledge",
     summary: result.summary || "",
     source_count: transcripts.length,
     source_titles: transcripts.map((item) => item.title),
-    generated_at: new Date().toISOString(),
+    source_videos: transcripts.map((item) => item.url).filter(Boolean),
+    generated_at: now,
+    built_at: now,
     frameworks: Array.isArray(result.frameworks) ? result.frameworks : [],
     tactics: Array.isArray(result.tactics) ? result.tactics : [],
     quotes: Array.isArray(result.quotes) ? result.quotes : [],
@@ -287,6 +290,7 @@ async function synthesizeKnowledge({ transcripts, topic, model, intent, outputPa
         intent,
         filePath: outputPath || "",
         createdAt: normalized.generated_at,
+        builtAt: normalized.built_at,
       });
     }
     return normalized;

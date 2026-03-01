@@ -11,6 +11,7 @@ import {
   extractFromUrls,
   inspectUrl,
   listChannelVideoUrls,
+  runYtDlp,
 } from "../src/extract.js";
 import { searchTopic } from "../src/search.js";
 import { synthesizeKnowledge } from "../src/synthesize.js";
@@ -40,17 +41,20 @@ function resolveSource(inputUrl, options) {
     options.urls && options.urls.length
       ? { type: "urls", value: options.urls }
       : null,
+    options.channels && options.channels.length
+      ? { type: "channels", value: options.channels }
+      : null,
   ].filter(Boolean);
 
   if (sources.length === 0) {
     throw new Error(
-      "Provide exactly one source: <url>, --channel, --topic, or --urls."
+      "Provide exactly one source: <url>, --channel, --channels, --topic, or --urls."
     );
   }
 
   if (sources.length > 1) {
     throw new Error(
-      "Only one source mode can be used at a time: <url>, --channel, --topic, or --urls."
+      "Only one source mode can be used at a time: <url>, --channel, --channels, --topic, or --urls."
     );
   }
 
@@ -141,6 +145,34 @@ async function gatherSourceItems(source, limit) {
     };
   }
 
+  if (source.type === "channels") {
+    // Multi-channel: gather from each channel URL
+    const allDiscovered = [];
+    const allUrls = [];
+    const channelNames = [];
+
+    for (const channelUrl of source.value) {
+      const discovered = await listChannelVideoUrls(channelUrl, limit);
+      const items = discovered.map((d) => ({
+        ...d,
+        description: d.description || "",
+        duration: d.duration || 0,
+      }));
+      allDiscovered.push(...items);
+      allUrls.push(...items.map((item) => item.url));
+      if (discovered[0]?.channelTitle) {
+        channelNames.push(discovered[0].channelTitle);
+      }
+    }
+
+    return {
+      discovered: allDiscovered,
+      urls: allUrls,
+      topic: channelNames.join(" + ") || "Multi-Channel",
+      sources: source.value,
+    };
+  }
+
   if (source.type === "topic") {
     const discovered = await searchTopic(source.value, limit);
     return {
@@ -171,7 +203,114 @@ function withErrorHandler(fn) {
 program
   .name("skillforge")
   .description("Turn YouTube videos, channels, and topics into agent-ready skills")
-  .version("0.2.0");
+  .version("0.3.0");
+
+// ── check ────────────────────────────────────────────────────────────
+program
+  .command("check")
+  .description("Check if a skill exists for a given intent")
+  .requiredOption("--intent <intent>", "Intent to search for")
+  .action(
+    withErrorHandler(async (options) => {
+      const results = await skillIndex.search(options.intent);
+
+      if (results.length === 0) {
+        process.stdout.write(
+          chalk.yellow(`No skill found for intent: "${options.intent}"\n`)
+        );
+        process.stdout.write(
+          chalk.dim(`Run: skillforge scan <channel> --intent "${options.intent}"\n`)
+        );
+        process.exitCode = 1;
+        return;
+      }
+
+      process.stdout.write(
+        chalk.bold(`Found ${results.length} matching skill(s):\n\n`)
+      );
+      for (const skill of results) {
+        const rel = Math.round((skill.relevance || 0) * 100);
+        process.stdout.write(
+          `  ${chalk.green(String(rel).padStart(3) + "%")}  ${chalk.bold(skill.name)} ${chalk.dim("(" + skill.slug + ")")}\n`
+        );
+        if (skill.intent) {
+          process.stdout.write(`        ${chalk.dim("Intent:")} ${skill.intent}\n`);
+        }
+        if (skill.filePath) {
+          process.stdout.write(`        ${chalk.dim("File:")} ${skill.filePath}\n`);
+        }
+        process.stdout.write("\n");
+      }
+    })
+  );
+
+// ── suggest ──────────────────────────────────────────────────────────
+program
+  .command("suggest")
+  .description("Search YouTube for channels related to a topic")
+  .requiredOption("--topic <topic>", "Topic to search for")
+  .action(
+    withErrorHandler(async (options) => {
+      const spinner = ora({ text: "Searching YouTube", color: "cyan" }).start();
+
+      const { stdout } = await runYtDlp([
+        "--dump-single-json",
+        "--flat-playlist",
+        `ytsearch10:${options.topic}`,
+        "--no-playlist",
+      ]);
+
+      const payload = JSON.parse(stdout);
+      const entries = Array.isArray(payload.entries) ? payload.entries : [];
+
+      // Extract unique channels from results
+      const channelMap = new Map();
+      for (const entry of entries) {
+        const channel = entry.channel || entry.uploader || null;
+        const channelUrl = entry.channel_url || entry.uploader_url || null;
+        if (channel && channelUrl && !channelMap.has(channel)) {
+          channelMap.set(channel, {
+            name: channel,
+            url: channelUrl,
+            videoCount: 0,
+          });
+        }
+        if (channel && channelMap.has(channel)) {
+          channelMap.get(channel).videoCount++;
+        }
+      }
+
+      const channels = [...channelMap.values()]
+        .sort((a, b) => b.videoCount - a.videoCount)
+        .slice(0, 5);
+
+      spinner.succeed(`Found ${channels.length} channel(s) for "${options.topic}"`);
+
+      if (channels.length === 0) {
+        process.stdout.write(chalk.yellow("No channels found for this topic.\n"));
+        return;
+      }
+
+      process.stdout.write(`\n${chalk.bold("Top channel suggestions:")}\n\n`);
+      for (let i = 0; i < channels.length; i++) {
+        const ch = channels[i];
+        process.stdout.write(
+          `  ${chalk.green(String(i + 1) + ".")} ${chalk.bold(ch.name)}\n`
+        );
+        process.stdout.write(
+          `     ${chalk.dim(ch.url)}\n`
+        );
+        process.stdout.write(
+          `     ${chalk.dim(`${ch.videoCount} video(s) in search results`)}\n\n`
+        );
+      }
+
+      const topChannel = channels[0];
+      process.stdout.write(
+        `${chalk.dim("Next:")} skillforge scan ${topChannel.url} --intent "${options.topic}"\n`
+      );
+    })
+  );
 
 // ── scan ──────────────────────────────────────────────────────────────
 program
@@ -236,9 +375,11 @@ program
   .option("--proposal <id>", "Build from a saved proposal")
   .option("--skills <skills>", "Comma-separated skill letters to build from proposal")
   .option("--channel <channelUrl>", "Build from a full YouTube channel")
+  .option("--channels <channels>", "Comma-separated channel URLs for multi-channel build", collectUrls)
   .option("--topic <topic>", "Search YouTube for a topic and auto-build")
   .option("--urls <urls>", "Comma-separated list of specific YouTube URLs", collectUrls)
   .option("--intent <intent>", "Intent string for skill indexing")
+  .option("--auto", "Skip proposal review and build directly")
   .option(
     "--output <path>",
     "Where to save the generated output",
@@ -264,6 +405,12 @@ program
     withErrorHandler(async (url, options) => {
       const spinner = ora({ text: "Preparing build", color: "cyan" }).start();
 
+      if (options.auto) {
+        process.stdout.write(
+          chalk.yellow("Auto mode: skipping proposal review\n")
+        );
+      }
+
       if (!["skill", "markdown", "json"].includes(options.format)) {
         throw new Error("`--format` must be one of: skill, markdown, json.");
       }
@@ -275,8 +422,9 @@ program
       let sourceUrls;
       let topic;
       let intent = options.intent || "";
+      let channelSources = null;
 
-      if (options.proposal) {
+      if (options.proposal && !options.auto) {
         // Build from proposal
         spinner.text = "Loading proposal";
         const proposal = await propose.load(options.proposal);
@@ -303,7 +451,7 @@ program
           throw new Error("No videos matched the selected skills in this proposal.");
         }
       } else {
-        // Original v1 flow
+        // Direct build flow (also used when --auto is set)
         const source = resolveSource(url, options);
 
         spinner.text = "Resolving source videos";
@@ -319,6 +467,7 @@ program
             : options.limit
         );
         topic = sourceItems.topic;
+        channelSources = sourceItems.sources || null;
       }
 
       spinner.text = `Fetching transcripts from ${sourceUrls.length} video(s)`;
@@ -347,6 +496,11 @@ program
         outputPath: destination,
       });
 
+      // Attach channel sources for multi-channel builds
+      if (channelSources) {
+        synthesis.sources = channelSources;
+      }
+
       spinner.text = "Formatting output";
       const content = formatDocument(options.format, synthesis);
 
@@ -365,6 +519,11 @@ program
       if (intent) {
         process.stdout.write(
           `${chalk.green("Indexed with intent:")} ${intent}\n`
+        );
+      }
+      if (channelSources) {
+        process.stdout.write(
+          `${chalk.green("Sources:")} ${channelSources.join(", ")}\n`
         );
       }
     })

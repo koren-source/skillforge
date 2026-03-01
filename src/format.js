@@ -82,11 +82,28 @@ function formatSkill(data) {
     )
     .join("\n\n");
 
-  return `---
-name: "${data.topic}"
-description: "${description.replace(/"/g, '\\"')}"
-usage: "${usage.replace(/"/g, '\\"')}"
----
+  const frontmatter = [
+    `---`,
+    `name: "${data.topic}"`,
+    `description: "${description.replace(/"/g, '\\"')}"`,
+    `usage: "${usage.replace(/"/g, '\\"')}"`,
+    `built_at: "${data.built_at || data.generated_at}"`,
+  ];
+  if (data.source_videos?.length) {
+    frontmatter.push(`source_videos:`);
+    for (const url of data.source_videos) {
+      frontmatter.push(`  - "${url}"`);
+    }
+  }
+  if (data.sources?.length) {
+    frontmatter.push(`sources:`);
+    for (const src of data.sources) {
+      frontmatter.push(`  - "${src}"`);
+    }
+  }
+  frontmatter.push(`---`);
+
+  return `${frontmatter.join("\n")}
 
 ${buildHeader(data)}
 

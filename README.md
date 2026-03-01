@@ -69,6 +69,44 @@ skillforge build --topic "cold email"
 skillforge build --urls "https://youtu.be/a1,https://youtu.be/b2,https://youtu.be/c3"
 ```
 
+### Auto mode (skip proposal review)
+
+Skip the proposal step entirely and go straight from transcript to synthesis:
+
+```bash
+skillforge build --topic "meta ads" --auto
+```
+
+Prints a warning (`Auto mode: skipping proposal review`) and builds immediately.
+
+### Multi-channel build
+
+Fetch transcripts from multiple channels and merge into one SKILL.md with deduped frameworks and a Sources section listing all channels:
+
+```bash
+skillforge build --channels "https://www.youtube.com/@channel1/videos,https://www.youtube.com/@channel2/videos" --intent "meta ads" --limit 5
+```
+
+### Check if a skill exists
+
+Quickly check whether a skill already exists in your library for a given intent:
+
+```bash
+skillforge check --intent "meta ads"
+```
+
+If matches are found, prints them with relevance percentages and exits 0. If none exist, suggests running `skillforge scan` and exits 1.
+
+### Suggest channels for a topic
+
+Search YouTube for channels related to a topic and get ranked suggestions:
+
+```bash
+skillforge suggest --topic "cold email"
+```
+
+Outputs the top 5 channel suggestions sorted by relevance, then suggests a `skillforge scan` command for the top channel.
+
 ### Output formats
 
 ```bash
@@ -80,14 +118,65 @@ skillforge build --topic "meta ads" --format json
 ### Custom output directory and model
 
 ```bash
-skillforge build --topic "yc fundraising" --output ./generated --model claude-3-5-sonnet-20241022
+skillforge build --topic "yc fundraising" --output ./generated --model claude-sonnet-4-20250514
 ```
 
 ### CLI help
 
 ```bash
+skillforge --help
+skillforge check --help
+skillforge suggest --help
 skillforge build --help
 ```
+
+## JavaScript API
+
+SkillForge exports a programmatic API for use in your own Node.js scripts and agent pipelines:
+
+```js
+import { recall, build, check } from "skillforge";
+
+// Check if a skill exists
+const { found, results } = await check("meta ads");
+
+// Search existing skills by intent
+const skills = await recall("cold email outreach");
+
+// Build a new skill programmatically
+const result = await build({
+  topic: "meta ads",
+  intent: "meta ads strategy",
+  auto: true,
+  model: "claude-sonnet-4-20250514",
+  output: "./output",
+});
+console.log(result.filePath, result.transcriptCount);
+```
+
+The `build()` function accepts all the same options as the CLI: `channel`, `channels`, `topic`, `urls`, `intent`, `auto`, `model`, `output`, `format`, and `limit`.
+
+## Freshness Metadata
+
+Every generated SKILL.md now includes freshness metadata in its YAML frontmatter:
+
+```yaml
+---
+name: "Meta Ads"
+description: "Synthesized YouTube knowledge about meta ads."
+usage: "Load this skill when working on meta ads strategy, execution, or review tasks."
+built_at: "2026-03-01T12:00:00.000Z"
+source_videos:
+  - "https://www.youtube.com/watch?v=abc123"
+  - "https://www.youtube.com/watch?v=def456"
+---
+```
+
+- `built_at`: ISO 8601 timestamp of when the skill was generated
+- `source_videos`: Array of YouTube URLs used to build the skill
+- Multi-channel builds also include a `sources` list of channel URLs
+
+The `built_at` timestamp is also stored in the skill index for freshness queries.
 
 ## Output Formats
 
@@ -104,6 +193,9 @@ Example snippet from `skill` output:
 name: Cold Email Outreach
 description: Synthesized YouTube knowledge about cold email outreach.
 usage: Load this skill when working on cold email outreach strategy, execution, or review tasks.
+built_at: "2026-03-01T12:00:00.000Z"
+source_videos:
+  - "https://www.youtube.com/watch?v=abc123"
 ---
 
 # AI-Synthesized Knowledge: Cold Email Outreach

@@ -39,6 +39,7 @@ async function add(skill) {
     intent: skill.intent || "",
     filePath: skill.filePath,
     createdAt: skill.createdAt || new Date().toISOString(),
+    builtAt: skill.builtAt || new Date().toISOString(),
   };
 
   if (idx >= 0) {
