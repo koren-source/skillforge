@@ -19,6 +19,9 @@ import {
   makeOutputFilename,
   slugify,
 } from "../src/format.js";
+import { scoreVideos } from "../src/score.js";
+import * as propose from "../src/propose.js";
+import * as skillIndex from "../src/skillIndex.js";
 
 const program = new Command();
 
@@ -92,6 +95,9 @@ async function gatherSourceItems(source, limit) {
               ? entry.url
               : `https://www.youtube.com/watch?v=${entry.id}`,
           title: entry.title || entry.id,
+          id: entry.id,
+          description: entry.description || "",
+          duration: entry.duration || 0,
         }));
 
       return {
@@ -102,7 +108,13 @@ async function gatherSourceItems(source, limit) {
     }
 
     return {
-      discovered: [{ url: source.value, title: metadata.title || source.value }],
+      discovered: [{
+        url: source.value,
+        title: metadata.title || source.value,
+        id: metadata.id || null,
+        description: metadata.description || "",
+        duration: metadata.duration || 0,
+      }],
       urls: [source.value],
       topic: metadata.title || "YouTube Video",
     };
@@ -110,7 +122,7 @@ async function gatherSourceItems(source, limit) {
 
   if (source.type === "urls") {
     return {
-      discovered: source.value.map((url) => ({ url, title: url })),
+      discovered: source.value.map((url) => ({ url, title: url, id: null, description: "", duration: 0 })),
       urls: source.value,
       topic: "YouTube Playlist",
     };
@@ -119,7 +131,11 @@ async function gatherSourceItems(source, limit) {
   if (source.type === "channel") {
     const discovered = await listChannelVideoUrls(source.value, limit);
     return {
-      discovered,
+      discovered: discovered.map((d) => ({
+        ...d,
+        description: d.description || "",
+        duration: d.duration || 0,
+      })),
       urls: discovered.map((item) => item.url),
       topic: discovered[0] ? discovered[0].channelTitle || "YouTube Channel" : "YouTube Channel",
     };
@@ -128,7 +144,11 @@ async function gatherSourceItems(source, limit) {
   if (source.type === "topic") {
     const discovered = await searchTopic(source.value, limit);
     return {
-      discovered,
+      discovered: discovered.map((d) => ({
+        ...d,
+        description: d.description || "",
+        duration: d.duration || 0,
+      })),
       urls: discovered.map((item) => item.url),
       topic: source.value,
     };
@@ -137,17 +157,88 @@ async function gatherSourceItems(source, limit) {
   throw new Error(`Unsupported source type: ${source.type}`);
 }
 
+function withErrorHandler(fn) {
+  return async (...args) => {
+    try {
+      await fn(...args);
+    } catch (error) {
+      process.stderr.write(`${chalk.red("Error:")} ${error.message}\n`);
+      process.exitCode = 1;
+    }
+  };
+}
+
 program
   .name("skillforge")
   .description("Turn YouTube videos, channels, and topics into agent-ready skills")
-  .version("0.1.0");
+  .version("0.2.0");
 
+// ── scan ──────────────────────────────────────────────────────────────
+program
+  .command("scan <url>")
+  .description("Score videos by relevance to an intent and save a proposal")
+  .requiredOption("--intent <intent>", "What you want to learn")
+  .option(
+    "--limit <n>",
+    "Maximum number of videos to scan",
+    (v) => Number.parseInt(v, 10),
+    20
+  )
+  .action(
+    withErrorHandler(async (url, options) => {
+      const spinner = ora({ text: "Scanning source", color: "cyan" }).start();
+
+      const source = resolveSource(url, {});
+      spinner.text = "Resolving videos";
+      const sourceItems = await gatherSourceItems(source, options.limit);
+
+      if (!sourceItems.discovered.length) {
+        spinner.fail("No videos found at that URL.");
+        return;
+      }
+
+      spinner.text = `Scoring ${sourceItems.discovered.length} videos against intent`;
+      const scored = scoreVideos(sourceItems.discovered, options.intent);
+
+      spinner.text = "Saving proposal";
+      const proposal = await propose.create(url, options.intent, scored);
+
+      spinner.succeed(`Proposal ${chalk.bold(proposal.id)} saved`);
+
+      const top = scored.filter((v) => v.score > 0).slice(0, 10);
+      process.stdout.write(`\n${chalk.bold("Top matches:")}\n`);
+      for (const v of top) {
+        const bar = chalk.green("█".repeat(Math.round(v.score / 5)));
+        process.stdout.write(
+          `  ${chalk.dim(String(v.score).padStart(3))}  ${bar}  ${v.title}\n`
+        );
+      }
+
+      process.stdout.write(
+        `\n${chalk.dim("Suggested skills:")}\n`
+      );
+      for (const s of proposal.suggestedSkills) {
+        process.stdout.write(
+          `  ${chalk.bold(s.letter)}  ${s.name} — ${s.description}\n`
+        );
+      }
+
+      process.stdout.write(
+        `\n${chalk.dim("Next:")} skillforge build --proposal ${proposal.id}\n`
+      );
+    })
+  );
+
+// ── build ─────────────────────────────────────────────────────────────
 program
   .command("build [url]")
-  .description("Build a skill document from a YouTube URL, channel, or topic")
+  .description("Build a skill document from a YouTube URL, channel, topic, or proposal")
+  .option("--proposal <id>", "Build from a saved proposal")
+  .option("--skills <skills>", "Comma-separated skill letters to build from proposal")
   .option("--channel <channelUrl>", "Build from a full YouTube channel")
   .option("--topic <topic>", "Search YouTube for a topic and auto-build")
   .option("--urls <urls>", "Comma-separated list of specific YouTube URLs", collectUrls)
+  .option("--intent <intent>", "Intent string for skill indexing")
   .option(
     "--output <path>",
     "Where to save the generated output",
@@ -167,13 +258,11 @@ program
   .option(
     "--model <model>",
     "AI model to use",
-    "claude-3-5-sonnet-20241022"
+    "claude-sonnet-4-20250514"
   )
-  .action(async (url, options) => {
-    const spinner = ora({ text: "Preparing build", color: "cyan" }).start();
-
-    try {
-      const source = resolveSource(url, options);
+  .action(
+    withErrorHandler(async (url, options) => {
+      const spinner = ora({ text: "Preparing build", color: "cyan" }).start();
 
       if (!["skill", "markdown", "json"].includes(options.format)) {
         throw new Error("`--format` must be one of: skill, markdown, json.");
@@ -183,18 +272,58 @@ program
         throw new Error("`--limit` must be a positive integer.");
       }
 
-      spinner.text = "Resolving source videos";
-      const sourceItems = await gatherSourceItems(source, options.limit);
-      if (!sourceItems.urls.length) {
-        throw new Error("No videos were found for the requested source.");
-      }
+      let sourceUrls;
+      let topic;
+      let intent = options.intent || "";
 
-      spinner.text = `Fetching transcripts from ${sourceItems.urls.length} video(s)`;
-      const transcripts = await extractFromUrls(sourceItems.urls, {
-        limit:
+      if (options.proposal) {
+        // Build from proposal
+        spinner.text = "Loading proposal";
+        const proposal = await propose.load(options.proposal);
+        intent = intent || proposal.intent;
+        topic = proposal.intent;
+
+        if (options.skills) {
+          const letters = options.skills.toUpperCase().split(",").map((s) => s.trim());
+          const selected = proposal.suggestedSkills.filter((s) =>
+            letters.includes(s.letter)
+          );
+          const videoIds = new Set(selected.flatMap((s) => s.videoIds));
+          sourceUrls = proposal.videos
+            .filter((v) => videoIds.has(v.id || v.url))
+            .map((v) => v.url);
+        } else {
+          // Use all videos with score > 0
+          sourceUrls = proposal.videos
+            .filter((v) => v.score > 0)
+            .map((v) => v.url);
+        }
+
+        if (!sourceUrls.length) {
+          throw new Error("No videos matched the selected skills in this proposal.");
+        }
+      } else {
+        // Original v1 flow
+        const source = resolveSource(url, options);
+
+        spinner.text = "Resolving source videos";
+        const sourceItems = await gatherSourceItems(source, options.limit);
+        if (!sourceItems.urls.length) {
+          throw new Error("No videos were found for the requested source.");
+        }
+
+        sourceUrls = sourceItems.urls.slice(
+          0,
           source.type === "url" || source.type === "urls"
             ? sourceItems.urls.length
-            : options.limit,
+            : options.limit
+        );
+        topic = sourceItems.topic;
+      }
+
+      spinner.text = `Fetching transcripts from ${sourceUrls.length} video(s)`;
+      const transcripts = await extractFromUrls(sourceUrls, {
+        limit: sourceUrls.length,
       });
 
       if (!transcripts.length) {
@@ -204,19 +333,22 @@ program
       }
 
       spinner.text = "Synthesizing knowledge with AI";
+      const destination = resolveDestination(
+        options.output,
+        options.format,
+        topic
+      );
+
       const synthesis = await synthesizeKnowledge({
         transcripts,
-        topic: sourceItems.topic,
+        topic,
         model: options.model,
+        intent,
+        outputPath: destination,
       });
 
       spinner.text = "Formatting output";
       const content = formatDocument(options.format, synthesis);
-      const destination = resolveDestination(
-        options.output,
-        options.format,
-        synthesis.topic
-      );
 
       await writeOutput(destination, content);
 
@@ -230,11 +362,109 @@ program
           "Model:"
         )} ${options.model}\n`
       );
-    } catch (error) {
-      spinner.fail("Build failed");
-      process.stderr.write(`${chalk.red(error.message)}\n`);
-      process.exitCode = 1;
-    }
-  });
+      if (intent) {
+        process.stdout.write(
+          `${chalk.green("Indexed with intent:")} ${intent}\n`
+        );
+      }
+    })
+  );
+
+// ── recall ────────────────────────────────────────────────────────────
+program
+  .command("recall")
+  .description("Search the skill library by intent")
+  .requiredOption("--intent <intent>", "What you're looking for")
+  .action(
+    withErrorHandler(async (options) => {
+      const results = await skillIndex.search(options.intent);
+
+      if (results.length === 0) {
+        process.stdout.write(chalk.yellow("No matching skills found.\n"));
+        return;
+      }
+
+      process.stdout.write(
+        chalk.bold(`Found ${results.length} matching skill(s):\n\n`)
+      );
+      for (const skill of results) {
+        const rel = Math.round((skill.relevance || 0) * 100);
+        process.stdout.write(
+          `  ${chalk.green(String(rel).padStart(3) + "%")}  ${chalk.bold(skill.name)} ${chalk.dim("(" + skill.slug + ")")}\n`
+        );
+        if (skill.intent) {
+          process.stdout.write(`        ${chalk.dim("Intent:")} ${skill.intent}\n`);
+        }
+        if (skill.filePath) {
+          process.stdout.write(`        ${chalk.dim("File:")} ${skill.filePath}\n`);
+        }
+        process.stdout.write("\n");
+      }
+    })
+  );
+
+// ── list ──────────────────────────────────────────────────────────────
+program
+  .command("list")
+  .description("List all saved skills in the library")
+  .action(
+    withErrorHandler(async () => {
+      const skills = await skillIndex.list();
+
+      if (skills.length === 0) {
+        process.stdout.write(chalk.yellow("No skills in the library yet.\n"));
+        process.stdout.write(
+          chalk.dim("Run `skillforge scan` then `skillforge build` to create your first skill.\n")
+        );
+        return;
+      }
+
+      process.stdout.write(chalk.bold(`${skills.length} skill(s) in library:\n\n`));
+      for (const skill of skills) {
+        process.stdout.write(
+          `  ${chalk.bold(skill.name)} ${chalk.dim("(" + skill.slug + ")")}\n`
+        );
+        if (skill.domain) {
+          process.stdout.write(`    ${chalk.dim("Domain:")} ${skill.domain}\n`);
+        }
+        if (skill.tags?.length) {
+          process.stdout.write(`    ${chalk.dim("Tags:")} ${skill.tags.join(", ")}\n`);
+        }
+        if (skill.createdAt) {
+          process.stdout.write(`    ${chalk.dim("Created:")} ${skill.createdAt}\n`);
+        }
+        process.stdout.write("\n");
+      }
+    })
+  );
+
+// ── prune ─────────────────────────────────────────────────────────────
+program
+  .command("prune")
+  .description("Remove skills from the index")
+  .option("--skill <name>", "Slug of the skill to remove")
+  .action(
+    withErrorHandler(async (options) => {
+      if (!options.skill) {
+        process.stderr.write(
+          chalk.red("Specify a skill to remove with --skill <slug>\n")
+        );
+        process.stdout.write(chalk.dim("Use `skillforge list` to see available slugs.\n"));
+        process.exitCode = 1;
+        return;
+      }
+
+      const removed = await skillIndex.remove(options.skill);
+      if (removed) {
+        process.stdout.write(
+          chalk.green(`Removed "${options.skill}" from the skill index.\n`)
+        );
+      } else {
+        process.stdout.write(
+          chalk.yellow(`Skill "${options.skill}" was not found in the index.\n`)
+        );
+      }
+    })
+  );
 
 await program.parseAsync(process.argv);

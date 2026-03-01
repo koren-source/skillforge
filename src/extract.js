@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
+import * as cache from "./cache.js";
 
 function runYtDlp(args, options = {}) {
   return new Promise((resolve, reject) => {
@@ -124,7 +125,28 @@ async function inspectUrl(url) {
   return fetchVideoMetadata(url);
 }
 
+function extractVideoId(url) {
+  const match = String(url).match(
+    /(?:v=|\/shorts\/|youtu\.be\/)([a-zA-Z0-9_-]{11})/
+  );
+  return match ? match[1] : null;
+}
+
 async function fetchTranscriptForUrl(url) {
+  const videoId = extractVideoId(url);
+
+  // Check cache first
+  if (videoId && (await cache.has(videoId))) {
+    const transcript = await cache.get(videoId);
+    const metadata = await fetchVideoMetadata(url);
+    return {
+      url,
+      title: metadata.title || url,
+      channelTitle: metadata.channel || metadata.uploader || null,
+      transcript,
+    };
+  }
+
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "skillforge-"));
 
   try {
@@ -155,6 +177,11 @@ async function fetchTranscriptForUrl(url) {
 
     if (!transcript.trim()) {
       return null;
+    }
+
+    // Save to cache
+    if (videoId) {
+      await cache.set(videoId, transcript);
     }
 
     return {

@@ -1,5 +1,45 @@
+import fs from "node:fs/promises";
+import path from "node:path";
+import os from "node:os";
 import process from "node:process";
 import Anthropic from "@anthropic-ai/sdk";
+import * as skillIndex from "./skillIndex.js";
+import { slugify } from "./format.js";
+
+const CHECKPOINT_DIR = path.join(os.homedir(), ".skillforge", "checkpoints");
+
+async function ensureCheckpointDir() {
+  await fs.mkdir(CHECKPOINT_DIR, { recursive: true });
+}
+
+async function loadCheckpoint(slug) {
+  try {
+    const data = await fs.readFile(
+      path.join(CHECKPOINT_DIR, `${slug}.json`),
+      "utf8"
+    );
+    return JSON.parse(data);
+  } catch {
+    return null;
+  }
+}
+
+async function saveCheckpoint(slug, data) {
+  await ensureCheckpointDir();
+  await fs.writeFile(
+    path.join(CHECKPOINT_DIR, `${slug}.json`),
+    JSON.stringify(data, null, 2),
+    "utf8"
+  );
+}
+
+async function removeCheckpoint(slug) {
+  try {
+    await fs.unlink(path.join(CHECKPOINT_DIR, `${slug}.json`));
+  } catch {
+    // ignore
+  }
+}
 
 const ANTHROPIC_MODEL_PREFIXES = ["claude"];
 const OPENAI_MODEL_PREFIXES = ["gpt", "o1", "o3", "o4"];
@@ -216,22 +256,134 @@ async function synthesizeWithOpenAI(prompt, model) {
   return JSON.parse(extractJson(text));
 }
 
-async function synthesizeKnowledge({ transcripts, topic, model }) {
+async function callProvider(prompt, model) {
+  const provider = inferProvider(model);
+  if (provider === "anthropic") {
+    return synthesizeWithAnthropic(prompt, model);
+  }
+  return synthesizeWithOpenAI(prompt, model);
+}
+
+async function synthesizeKnowledge({ transcripts, topic, model, intent, outputPath }) {
   if (!Array.isArray(transcripts) || transcripts.length === 0) {
     throw new Error("At least one transcript is required for synthesis.");
   }
 
-  const prompt = buildPrompt({ topic, transcripts });
-  const provider = inferProvider(model);
+  const slug = slugify(topic || "skillforge");
 
-  let result;
-  if (provider === "anthropic") {
-    result = await synthesizeWithAnthropic(prompt, model);
-  } else {
-    result = await synthesizeWithOpenAI(prompt, model);
+  // Check for checkpoint
+  const checkpoint = await loadCheckpoint(slug);
+  if (checkpoint?.result) {
+    await removeCheckpoint(slug);
+    const normalized = normalizeSynthesis(checkpoint.result, transcripts);
+    // Save to skill index
+    if (intent) {
+      await skillIndex.add({
+        name: normalized.topic,
+        slug,
+        domain: normalized.topic,
+        tags: normalized.frameworks.map((f) => f.name).slice(0, 5),
+        frameworks: normalized.frameworks.map((f) => f.name),
+        intent,
+        filePath: outputPath || "",
+        createdAt: normalized.generated_at,
+      });
+    }
+    return normalized;
   }
 
-  return normalizeSynthesis(result, transcripts);
+  // Check if transcript is too long — chunk and summarize
+  const combined = transcripts.map((t) => t.transcript).join("\n");
+  const CHUNK_LIMIT = 80000;
+
+  let result;
+  if (combined.length > CHUNK_LIMIT) {
+    // Split transcripts into chunks and summarize each
+    const chunks = [];
+    let currentChunk = [];
+    let currentLen = 0;
+
+    for (const t of transcripts) {
+      if (currentLen + t.transcript.length > CHUNK_LIMIT && currentChunk.length > 0) {
+        chunks.push([...currentChunk]);
+        currentChunk = [];
+        currentLen = 0;
+      }
+      currentChunk.push(t);
+      currentLen += t.transcript.length;
+    }
+    if (currentChunk.length > 0) chunks.push(currentChunk);
+
+    // If it's a single huge transcript, split it into text chunks
+    if (chunks.length === 1 && chunks[0].length === 1) {
+      const bigTranscript = chunks[0][0];
+      const textChunks = chunkText(bigTranscript.transcript, CHUNK_LIMIT);
+      const summaries = [];
+
+      for (let i = 0; i < textChunks.length; i++) {
+        const chunkTranscripts = [
+          { ...bigTranscript, transcript: textChunks[i] },
+        ];
+        const prompt = buildPrompt({ topic, transcripts: chunkTranscripts });
+        const chunkResult = await callProvider(prompt, model);
+        summaries.push(chunkResult);
+        await saveCheckpoint(slug, { phase: "chunk", index: i, partial: summaries });
+      }
+
+      // Merge summaries into one synthesis
+      const mergedTranscripts = summaries.map((s, i) => ({
+        title: `Chunk ${i + 1} summary`,
+        url: transcripts[0].url,
+        transcript: JSON.stringify(s),
+      }));
+      const mergePrompt = buildPrompt({ topic, transcripts: mergedTranscripts });
+      result = await callProvider(mergePrompt, model);
+    } else {
+      // Multiple chunks of transcripts
+      const summaries = [];
+      for (let i = 0; i < chunks.length; i++) {
+        const prompt = buildPrompt({ topic, transcripts: chunks[i] });
+        const chunkResult = await callProvider(prompt, model);
+        summaries.push(chunkResult);
+        await saveCheckpoint(slug, { phase: "chunk", index: i, partial: summaries });
+      }
+
+      const mergedTranscripts = summaries.map((s, i) => ({
+        title: `Batch ${i + 1} summary`,
+        url: chunks[i][0].url,
+        transcript: JSON.stringify(s),
+      }));
+      const mergePrompt = buildPrompt({ topic, transcripts: mergedTranscripts });
+      result = await callProvider(mergePrompt, model);
+    }
+  } else {
+    const prompt = buildPrompt({ topic, transcripts });
+    result = await callProvider(prompt, model);
+  }
+
+  // Save checkpoint before normalization
+  await saveCheckpoint(slug, { result });
+
+  const normalized = normalizeSynthesis(result, transcripts);
+
+  // Save to skill index if intent was provided
+  if (intent) {
+    await skillIndex.add({
+      name: normalized.topic,
+      slug,
+      domain: normalized.topic,
+      tags: normalized.frameworks.map((f) => f.name).slice(0, 5),
+      frameworks: normalized.frameworks.map((f) => f.name),
+      intent,
+      filePath: outputPath || "",
+      createdAt: normalized.generated_at,
+    });
+  }
+
+  // Clean up checkpoint on success
+  await removeCheckpoint(slug);
+
+  return normalized;
 }
 
 export {
