@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import { writeFileSync, unlinkSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { spawnSync } from "node:child_process";
@@ -54,11 +55,31 @@ function stripAnsi(str) {
  * Uses the user's existing claude CLI authentication (no API keys needed)
  */
 function callClaudeCli(prompt, model = DEFAULT_MODEL) {
-  const result = spawnSync("claude", ["-p", prompt, "--model", model], {
+  // Write prompt to temp file and pipe via bash.
+  // We use --system-prompt to override any global ~/.claude/CLAUDE.md context files
+  // that might cause the CLI to respond with persona text instead of the requested JSON.
+  const SYSTEM_PROMPT =
+    "You are a knowledge extraction engine. Output only what is explicitly requested. " +
+    "No explanations, no persona, no preamble.";
+
+  const tmpFile = path.join(os.tmpdir(), "skillforge-prompt-" + Date.now() + ".txt");
+  writeFileSync(tmpFile, prompt);
+
+  const cmd = [
+    "cat",
+    JSON.stringify(tmpFile),
+    "| claude -p",
+    "--model", JSON.stringify(model),
+    "--system-prompt", JSON.stringify(SYSTEM_PROMPT),
+  ].join(" ");
+
+  const result = spawnSync("bash", ["-c", cmd], {
     encoding: "utf8",
-    maxBuffer: 50 * 1024 * 1024, // 50MB buffer for large outputs
-    timeout: 5 * 60 * 1000, // 5 minute timeout
+    maxBuffer: 50 * 1024 * 1024,
+    timeout: 5 * 60 * 1000,
   });
+
+  try { unlinkSync(tmpFile); } catch (_) {}
 
   if (result.error) {
     if (result.error.code === "ENOENT") {
@@ -98,7 +119,7 @@ function chunkText(text, maxLength) {
 function buildPrompt({ topic, transcripts }) {
   const sources = transcripts
     .map((item, index) => {
-      const truncatedTranscript = chunkText(item.transcript, 12000)[0];
+      const truncatedTranscript = chunkText(item.transcript, 30000)[0]; // ~10-12 min of speech
       return [
         `Source ${index + 1}`,
         `Title: ${item.title}`,
