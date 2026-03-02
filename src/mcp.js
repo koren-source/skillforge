@@ -141,7 +141,7 @@ async function startServer() {
   process.stderr.write(`[skillforge] Indexed ${count} skill(s) into SQLite\n`);
 
   const server = new Server(
-    { name: "skillforge", version: "0.4.0" },
+    { name: "skillforge", version: "4.0.0" },
     { capabilities: { tools: {} } }
   );
 

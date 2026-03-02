@@ -39,7 +39,7 @@ function checkClaudeCliAuth({ validate = false } = {}) {
   // Test authentication with a simple prompt
   const testResult = spawnSync(
     "claude",
-    ["-p", "respond with only the word READY", "--model", "claude-haiku-4-5"],
+    ["-p", "respond with only the word READY", "--model", "claude-3-5-haiku-20241022"],
     {
       encoding: "utf8",
       timeout: 30000, // 30 second timeout
@@ -58,11 +58,12 @@ function checkClaudeCliAuth({ validate = false } = {}) {
 
   if (testResult.status !== 0) {
     const stderr = stripAnsi(testResult.stderr || "").trim();
+    const stderrLower = stderr.toLowerCase();
 
-    if (stderr.includes("not logged in") || stderr.includes("login")) {
+    if (stderrLower.includes("not logged in") || stderrLower.includes("login")) {
       result.error = "Not authenticated";
       result.hint = "Run: claude login";
-    } else if (stderr.includes("rate limit") || stderr.includes("quota")) {
+    } else if (stderrLower.includes("rate limit") || stderrLower.includes("quota")) {
       // Rate limited but authenticated
       result.authenticated = true;
       result.error = "Rate limited";

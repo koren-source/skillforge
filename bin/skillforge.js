@@ -236,7 +236,7 @@ function withErrorHandler(fn) {
 program
   .name("skillforge")
   .description("Turn YouTube videos, channels, and topics into agent-ready skills")
-  .version("0.5.1");
+  .version("4.0.0");
 
 // ── trust ────────────────────────────────────────────────────────────
 const trust = program
