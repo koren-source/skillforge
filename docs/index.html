@@ -1,148 +1,270 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>SkillForge — Give your agent a YouTube video and it will learn a skill</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0a0a0a; color: #fff; }
-    .hero { text-align: center; padding: 100px 24px 80px; max-width: 760px; margin: 0 auto; }
-    .badge { display: inline-block; background: #1a1a1a; border: 1px solid #2a2a2a; color: #888; font-size: 13px; padding: 6px 14px; border-radius: 20px; margin-bottom: 32px; }
-    .badge span { color: #fff; }
-    h1 { font-size: clamp(32px, 5vw, 56px); font-weight: 700; line-height: 1.15; letter-spacing: -1px; margin-bottom: 24px; }
-    h1 em { font-style: normal; color: #f97316; }
-    .sub { font-size: 20px; color: #888; line-height: 1.6; max-width: 560px; margin: 0 auto 48px; }
-    .flow { display: flex; align-items: center; justify-content: center; gap: 12px; flex-wrap: wrap; margin-bottom: 56px; }
-    .flow-step { background: #111; border: 1px solid #222; padding: 10px 18px; border-radius: 8px; font-size: 14px; color: #ccc; }
-    .flow-arrow { color: #444; font-size: 18px; }
-    .cta { display: inline-block; background: #f97316; color: #000; font-weight: 700; font-size: 16px; padding: 16px 36px; border-radius: 10px; text-decoration: none; margin-bottom: 16px; }
-    .cta:hover { background: #fb923c; }
-    .cta-sub { font-size: 13px; color: #555; }
-    .terminal { background: #0d0d0d; border: 1px solid #1e1e1e; border-radius: 12px; max-width: 640px; margin: 80px auto; text-align: left; overflow: hidden; }
-    .terminal-header { background: #1a1a1a; padding: 12px 16px; display: flex; gap: 8px; align-items: center; }
-    .dot { width: 12px; height: 12px; border-radius: 50%; }
-    .dot.r { background: #ff5f57; } .dot.y { background: #febc2e; } .dot.g { background: #28c840; }
-    .terminal-title { color: #555; font-size: 13px; margin-left: 8px; }
-    .terminal-body { padding: 24px; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 14px; line-height: 1.8; }
-    .prompt { color: #555; } .cmd { color: #fff; } .out { color: #888; } .ok { color: #4ade80; }
-    .how { max-width: 800px; margin: 0 auto; padding: 80px 24px; }
-    .how h2 { font-size: 32px; font-weight: 700; margin-bottom: 48px; text-align: center; }
-    .steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 24px; }
-    .step { background: #111; border: 1px solid #1e1e1e; border-radius: 12px; padding: 28px 24px; }
-    .step-num { font-size: 11px; color: #f97316; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 12px; }
-    .step h3 { font-size: 16px; font-weight: 600; margin-bottom: 8px; }
-    .step p { font-size: 14px; color: #666; line-height: 1.6; }
-    .skill-preview { max-width: 800px; margin: 0 auto; padding: 0 24px 80px; }
-    .skill-preview h2 { font-size: 32px; font-weight: 700; margin-bottom: 16px; text-align: center; }
-    .skill-preview .sub2 { text-align: center; color: #666; font-size: 16px; margin-bottom: 48px; }
-    .card { background: #111; border: 1px solid #1e1e1e; border-radius: 12px; padding: 32px; }
-    .card-title { font-size: 18px; font-weight: 700; margin-bottom: 4px; }
-    .card-meta { font-size: 13px; color: #555; margin-bottom: 28px; }
-    .section-label { font-size: 11px; color: #f97316; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 14px; margin-top: 28px; }
-    .framework { background: #0d0d0d; border: 1px solid #1e1e1e; border-radius: 8px; padding: 16px 20px; margin-bottom: 12px; }
-    .framework h4 { font-size: 15px; font-weight: 600; margin-bottom: 6px; }
-    .framework p { font-size: 13px; color: #666; }
-    .numbers { display: flex; flex-direction: column; gap: 8px; }
-    .number { font-size: 14px; color: #ccc; padding: 8px 0; border-bottom: 1px solid #1a1a1a; }
-    .number:last-child { border: none; }
-    .number strong { color: #f97316; }
-    blockquote { border-left: 3px solid #f97316; padding: 12px 20px; margin: 16px 0; color: #888; font-style: italic; font-size: 14px; }
-    .install { max-width: 640px; margin: 0 auto; padding: 0 24px 100px; text-align: center; }
-    .install h2 { font-size: 32px; font-weight: 700; margin-bottom: 16px; }
-    .install p { color: #666; margin-bottom: 40px; }
-    .code-block { background: #0d0d0d; border: 1px solid #1e1e1e; border-radius: 10px; padding: 20px 24px; text-align: left; font-family: monospace; font-size: 14px; line-height: 2; margin-bottom: 24px; }
-    .c-gray { color: #555; } .c-white { color: #fff; } .c-green { color: #4ade80; }
-    footer { border-top: 1px solid #111; padding: 40px 24px; text-align: center; color: #333; font-size: 13px; }
-    footer a { color: #555; text-decoration: none; }
-  </style>
-</head>
-<body>
-<section class="hero">
-  <div class="badge">Open Source &middot; MIT &middot; Built by <span>Cutbox.ai</span></div>
-  <h1>Give your agent a<br/><em>YouTube video</em><br/>and it will learn a skill.</h1>
-  <p class="sub">SkillForge turns any YouTube video into structured knowledge your AI agent can use &mdash; frameworks, tactics, key quotes, and numbers. Organized by creator. Recalled by intent.</p>
-  <div class="flow">
-    <div class="flow-step">YouTube URL</div>
-    <div class="flow-arrow">&rarr;</div>
-    <div class="flow-step">Transcript</div>
-    <div class="flow-arrow">&rarr;</div>
-    <div class="flow-step">Claude learns</div>
-    <div class="flow-arrow">&rarr;</div>
-    <div class="flow-step">Skill created</div>
-    <div class="flow-arrow">&rarr;</div>
-    <div class="flow-step">Organized by creator</div>
-  </div>
-  <a class="cta" href="https://github.com/koren-source/skillforge">View on GitHub &rarr;</a><br/>
-  <span class="cta-sub">Free &middot; Open Source &middot; No API key required</span>
-</section>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SkillForge | YouTube → Agent Skill Library</title>
+    <meta name="description" content="SkillForge turns YouTube channels into a compounding skill library your agents can query on demand." />
+    <link rel="stylesheet" href="styles.css" />
+    <style>
+      .modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.75); z-index:1000; align-items:center; justify-content:center; padding:1rem; }
+      .modal-overlay.open { display:flex; }
+      .modal-card { background:#0e1117; border:1px solid #2a2d35; border-radius:16px; padding:2.5rem; max-width:560px; width:100%; position:relative; }
+      .modal-close { position:absolute; top:1rem; right:1rem; background:none; border:none; color:#888; font-size:1.2rem; cursor:pointer; padding:0.25rem 0.5rem; }
+      .modal-close:hover { color:#fff; }
+      .modal-card h2 { font-size:1.6rem; margin:0.5rem 0 1.5rem; }
+      .quickstart-steps { list-style:none; padding:0; margin:0 0 2rem; display:flex; flex-direction:column; gap:1.5rem; counter-reset:steps; }
+      .quickstart-steps li { counter-increment:steps; }
+      .step-label { display:flex; align-items:center; gap:0.5rem; font-size:0.78rem; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:#4ade80; margin-bottom:0.5rem; }
+      .step-label::before { content:counter(steps); display:inline-flex; align-items:center; justify-content:center; width:20px; height:20px; border-radius:50%; background:#4ade80; color:#000; font-size:0.7rem; font-weight:800; flex-shrink:0; }
+      .code-block { display:flex; align-items:center; gap:0.5rem; background:#1a1d24; border:1px solid #2a2d35; border-radius:8px; padding:0.65rem 1rem; margin-bottom:0.4rem; }
+      .code-block code { font-family:'Courier New',monospace; font-size:0.82rem; color:#e2e8f0; flex:1; word-break:break-all; }
+      .copy-btn { background:#2a2d35; border:none; color:#aaa; font-size:0.72rem; padding:0.25rem 0.6rem; border-radius:4px; cursor:pointer; white-space:nowrap; flex-shrink:0; transition:all 0.15s; }
+      .copy-btn:hover { background:#4ade80; color:#000; }
+      .step-hint { font-size:0.8rem; color:#666; margin:0; }
+      .step-hint em { color:#4ade80; font-style:normal; }
+      .step-desc { font-size:0.88rem; color:#aaa; margin:0; line-height:1.6; }
+      .step-desc code { background:#1a1d24; padding:0.1em 0.3em; border-radius:3px; font-size:0.85em; }
+      .modal-actions { display:flex; justify-content:center; }
 
-<div class="terminal">
-  <div class="terminal-header">
-    <div class="dot r"></div><div class="dot y"></div><div class="dot g"></div>
-    <span class="terminal-title">terminal</span>
-  </div>
-  <div class="terminal-body">
-    <div><span class="prompt">$ </span><span class="cmd">skillforge watch https://youtu.be/MH-IMJxbUY4</span></div>
-    <div><span class="out">- Fetching transcript</span></div>
-    <div><span class="ok">&#10004; Building a $12,000,000 Business for a Stranger in 25 Minutes</span></div>
-    <div><span class="out">&nbsp;&nbsp;Creator: Alex Hormozi &middot; Frameworks: 3 &middot; claude-sonnet</span></div>
-    <div><span class="out">&nbsp;&nbsp;Saved: ~/.skillforge/library/@alex-hormozi/building-a-12m-business.skill.md</span></div>
-    <br/>
-    <div><span class="prompt">$ </span><span class="cmd">skillforge recall --intent "scaling a business"</span></div>
-    <div><span class="ok">100%&nbsp; Alex Hormozi &mdash; Building a $12M Business for a Stranger</span></div>
-  </div>
-</div>
+      .creator-showcase { padding: 5rem 0; }
+      .section-subtext { color: #888; font-size: 1rem; max-width: 560px; margin: 0 auto 3rem; text-align: center; line-height: 1.7; }
+      .creator-grid { display: flex; justify-content: center; gap: 1.5rem; margin-bottom: 2rem; } .creator-card { max-width: 420px; width: 100%; }
+      .creator-card { background: #0e1117; border: 1px solid #2a2d35; border-radius: 16px; padding: 1.75rem; }
+      .creator-card-add { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; border-style: dashed; min-height: 200px; }
+      .creator-header { display: flex; align-items: center; gap: 1rem; margin-bottom: 1.25rem; }
+      .creator-avatar { width: 44px; height: 44px; border-radius: 50%; background: linear-gradient(135deg, #4ade80, #22c55e); display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 0.85rem; color: #000; flex-shrink: 0; }
+      .creator-handle { font-weight: 700; font-size: 1rem; color: #fff; margin: 0 0 0.2rem; }
+      .creator-meta { font-size: 0.78rem; color: #4ade80; margin: 0; }
+      .skill-list { list-style: none; padding: 0; margin: 0 0 1rem; display: flex; flex-direction: column; gap: 0.6rem; }
+      .skill-item { display: flex; align-items: center; gap: 0.6rem; font-size: 0.82rem; color: #aaa; }
+      .skill-item.skill-active { color: #e2e8f0; }
+      .skill-dot { width: 7px; height: 7px; border-radius: 50%; background: #2a2d35; flex-shrink: 0; }
+      .skill-active .skill-dot { background: #4ade80; }
+      .skill-name { flex: 1; font-family: "Courier New", monospace; font-size: 0.78rem; }
+      .skill-count { font-size: 0.72rem; color: #555; white-space: nowrap; }
+      .creator-path { font-size: 0.72rem; color: #555; margin: 0; }
+      .creator-path code { font-size: 0.72rem; }
+      .creator-add-icon { font-size: 2rem; color: #2a2d35; margin-bottom: 0.75rem; }
+      .creator-add-label { font-weight: 700; font-size: 0.95rem; color: #666; margin: 0 0 0.5rem; }
+      .creator-add-sub { font-size: 0.8rem; color: #444; margin: 0; line-height: 1.6; }
+      .creator-add-sub code { font-size: 0.78rem; color: #4ade80; }
+      .compound-callout { background: #0a0f0a; border: 1px solid #1a3a1a; border-radius: 12px; padding: 1.25rem 1.5rem; text-align: center; font-size: 0.9rem; color: #aaa; line-height: 1.6; }
+      .compound-callout strong { color: #4ade80; }
+      .spec-line { font-size: 0.78rem; color: #555; margin: 0.5rem 0 0; letter-spacing: 0.02em; }
+      .coming-soon-badge { display:inline-block; font-size:0.65rem; font-weight:700; background:#1a2a1a; color:#4ade80; border:1px solid #2a4a2a; border-radius:4px; padding:0.1em 0.4em; vertical-align:middle; margin-left:0.4em; text-transform:uppercase; letter-spacing:0.06em; }
+      .feature-card--coming-soon { opacity: 0.85; border-style: dashed; }
+    </style>
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="site-header">
+        <a class="brand" href="#top" aria-label="SkillForge home">SkillForge</a>
+        <nav class="site-nav" aria-label="Primary">
+          <a href="#docs">Docs</a>
+          <a href="https://github.com/koren-source/skillforge" target="_blank" rel="noreferrer">GitHub</a>
+          <a href="https://clawhub.ai" target="_blank" rel="noreferrer">ClaWHub</a>
+        </nav>
+        <button class="button button-primary header-cta" onclick="openModal()">Get Started</button>
+      </header>
 
-<section class="how">
-  <h2>How it works</h2>
-  <div class="steps">
-    <div class="step"><div class="step-num">Step 1</div><h3>Pull the transcript</h3><p>yt-dlp downloads the full video transcript automatically.</p></div>
-    <div class="step"><div class="step-num">Step 2</div><h3>Learn from it</h3><p>Claude reads the full transcript and extracts frameworks, tactics, key quotes, and numbers.</p></div>
-    <div class="step"><div class="step-num">Step 3</div><h3>Create a skill</h3><p>A structured skill doc is saved &mdash; not a summary, but operational knowledge your agent can apply.</p></div>
-    <div class="step"><div class="step-num">Step 4</div><h3>Organized by creator</h3><p>Every skill is filed under its creator. Your agent always knows the source.</p></div>
-  </div>
-</section>
+      <main id="top">
+        <section class="hero">
+          <div class="hero-copy">
+            <p class="badge">YouTube → Agent Skill Library</p>
+            <h1>Humans learned from YouTube for years.<span>Now let your agent do the same.</span></h1>
+            <p class="hero-text">SkillForge watches YouTube channels so your AI agent doesn't have to. Drop a channel, tell it what to learn, get back a ready-to-use agent skill.</p>
+            <div class="hero-actions">
+              <button class="button button-primary" onclick="openModal()">Get Started</button>
+              <a class="button button-secondary" href="https://github.com/koren-source/skillforge" target="_blank" rel="noreferrer">View on GitHub</a>
+            </div>
+            <p class="trust-line">Built by Koren Saida at <a href="https://cutbox.ai" target="_blank" rel="noreferrer">Cutbox.ai</a> <span aria-hidden="true">·</span> Open source <span aria-hidden="true">·</span> MIT License</p>
+          </div>
+          <aside class="demo-panel" aria-label="Interactive terminal demo">
+            <div class="terminal">
+              <div class="terminal-topbar">
+                <span class="terminal-dot"></span><span class="terminal-dot"></span><span class="terminal-dot"></span>
+                <p class="terminal-title">skillforge.live.demo</p>
+              </div>
+              <div class="terminal-body"><pre id="terminal-output" aria-live="polite"></pre></div>
+            </div>
+          </aside>
+        </section>
 
-<section class="skill-preview">
-  <h2>What a skill looks like</h2>
-  <p class="sub2">Built from a real Hormozi video in under 60 seconds.</p>
-  <div class="card">
-    <div class="card-title">Building a $12,000,000 Business for a Stranger</div>
-    <div class="card-meta">Alex Hormozi &middot; claude-sonnet &middot; March 2026</div>
-    <div class="section-label">Frameworks</div>
-    <div class="framework"><h4>Supply vs Demand Constraint Analysis</h4><p>Diagnose whether business growth is limited by demand or supply before deciding what to fix.</p></div>
-    <div class="framework"><h4>UGC Content Loop System</h4><p>Incentivize customers to post content, test organically, take winners with a 5-second CTA, run as paid ads. 20&ndash;30 variations per week.</p></div>
-    <div class="framework"><h4>Damaging Admissions Framework</h4><p>Build credibility by frontloading all negatives before benefits. They want it &mdash; they just don&rsquo;t believe it.</p></div>
-    <div class="section-label">Key Numbers</div>
-    <div class="numbers">
-      <div class="number"><strong>1.4:1 LTV:CAC</strong> &mdash; unsustainable, requires 6-month breakeven</div>
-      <div class="number"><strong>$100K/month ad ceiling</strong> &mdash; creative constraint, not budget</div>
-      <div class="number"><strong>85% from single channel</strong> &mdash; dangerous platform concentration</div>
+        <section class="section" id="docs">
+          <div class="section-heading">
+            <p class="eyebrow">How it works</p>
+            <h2>One channel in. A compounding skill library out.</h2>
+          </div>
+          <div class="steps-grid">
+            <article class="step-card"><span class="step-number">01</span><h3>Drop a channel plus intent</h3><p>Drop a YouTube channel URL and what you want your agent to learn. SkillForge handles the rest.</p></article>
+            <article class="step-card"><span class="step-number">02</span><h3>Agent scans and proposes skills</h3><p>SkillForge ranks the best videos, extracts the relevant frameworks, then suggests reusable skills.</p></article>
+            <article class="step-card"><span class="step-number">03</span><h3>Skills saved to memory permanently</h3><p>Ship the approved skills straight into agent memory so future tasks start smarter.</p></article>
+          </div>
+        </section>
+
+        <section class="section">
+          <div class="section-heading"><p class="eyebrow">Use cases</p><h2>Built for operators who want leverage, not more content.</h2></div>
+          <div class="card-grid">
+            <article class="feature-card"><h3>Learn from any expert</h3><p>Point at any YouTube channel, extract the sharpest frameworks, and turn them into agent skills your stack can reuse.</p></article>
+            <article class="feature-card"><h3>Intent-first intelligence</h3><p>Not a dump of everything. SkillForge filters for exactly what matters to your next task.</p></article>
+            <article class="feature-card"><h3>Compounds over time</h3><p>Watch the same creator over time and skills compound — new videos merge in, nothing overwrites. Your agent gets sharper with every session.</p></article>
+            <article class="feature-card"><h3>Creator-organized library</h3><p>Skills live at <code>~/.skillforge/library/@creator/topic.skill.md</code> — full attribution, provenance, and source videos tracked in every file.</p></article>
+            <article class="feature-card"><h3>MCP server built in</h3><p>Run <code>skillforge serve</code> to expose your library as an MCP server. OpenClaw, Claude Desktop, and any MCP-compatible agent can query skills on demand.</p></article>
+            <article class="feature-card"><h3>Long-form video ready</h3><p>Handles podcasts, lectures, and deep-dives up to 4+ hours. Every minute gets read — nothing skipped.</p></article>
+          </div>
+        </section>
+
+        <section class="section built-for-agents">
+          <div class="section-heading"><p class="eyebrow">Built for agents</p><h2>Output that fits the way agent memory actually works.</h2></div>
+          <div class="snippet-shell">
+            <pre><code># SKILL.md
+name: sales-funnel-and-closing-framework
+source: youtube/@AlexHormozi
+creator: "@AlexHormozi"
+topic: sales-funnel-and-closing-framework
+intent: build a sales funnel
+
+when_to_use:
+  - Drafting funnel strategy
+  - Writing offers and objections handling
+  - Reviewing qualification and close steps
+
+instructions:
+  - Lead with value-stack, urgency, and proof
+  - Remove friction between lead capture and close
+  - Handle objections with diagnosis before pitch
+  - Use qualification criteria before escalation
+
+memory:
+  persistence: permanent
+  approved_by: operator</code></pre>
+          </div>
+        </section>
+      </main>
+
+      
+        <section class="section creator-showcase">
+          <div class="section-heading">
+            <p class="eyebrow">Creator library — live example</p>
+            <h2>Watch once. Skills compound forever.</h2>
+            <p class="section-subtext">Every video you watch from a creator adds to their skill branch. The library gets richer over time — nothing overwrites, everything stacks.</p>
+          </div>
+          <div class="creator-grid">
+            <div class="creator-card">
+              <div class="creator-header">
+                <div class="creator-avatar">AH</div>
+                <div>
+                  <p class="creator-handle">@AlexHormozi</p>
+                  <p class="creator-meta">4 skills · 12 videos ingested</p>
+                </div>
+              </div>
+              <ul class="skill-list">
+                <li class="skill-item skill-active">
+                  <span class="skill-dot"></span>
+                  <span class="skill-name">sales-funnel-and-closing-framework</span>
+                  <span class="skill-count">5 videos</span>
+                </li>
+                <li class="skill-item">
+                  <span class="skill-dot"></span>
+                  <span class="skill-name">lead-qualification-playbook</span>
+                  <span class="skill-count">3 videos</span>
+                </li>
+                <li class="skill-item">
+                  <span class="skill-dot"></span>
+                  <span class="skill-name">cold-outreach-system</span>
+                  <span class="skill-count">2 videos</span>
+                </li>
+                <li class="skill-item">
+                  <span class="skill-dot"></span>
+                  <span class="skill-name">offer-creation-framework</span>
+                  <span class="skill-count">2 videos</span>
+                </li>
+              </ul>
+              <p class="creator-path"><code>~/.skillforge/library/@alexhormozi/</code></p>
+            </div>
+
+
+          </div>
+          <div class="compound-callout">
+            <p>🔁 Watch a second Alex Hormozi video on sales funnels? It <strong>merges in</strong> — the skill gets sharper, nothing gets lost.</p>
+          </div>
+        </section>
+
+      <footer class="site-footer" id="footer-cta">
+        <div class="footer-card">
+          <p class="eyebrow">Ready to teach your agent?</p>
+          <h2>Turn channels into memory your stack can reuse.</h2>
+          <div class="hero-actions">
+            <button class="button button-primary" onclick="openModal()">Get Started</button>
+            <a class="button button-secondary" href="https://github.com/koren-source/skillforge" target="_blank" rel="noreferrer">View on GitHub</a>
+          </div>
+          <p class="footer-meta">Open source MIT. Built by <a href="https://cutbox.ai" target="_blank" rel="noreferrer">Cutbox.ai</a>.</p>
+        </div>
+      </footer>
     </div>
-    <div class="section-label">Key Quote</div>
-    <blockquote>"The easiest unlock is usually creative, not money."</blockquote>
-  </div>
-</section>
 
-<section class="install">
-  <h2>Get started in 3 commands</h2>
-  <p>No API keys required. Uses your Claude Code session.</p>
-  <div class="code-block">
-    <div><span class="c-gray"># Install</span></div>
-    <div><span class="c-white">npm install -g skillforge</span></div>
-    <br/>
-    <div><span class="c-gray"># Authenticate once</span></div>
-    <div><span class="c-white">claude login</span></div>
-    <br/>
-    <div><span class="c-gray"># Give your agent a video</span></div>
-    <div><span class="c-green">skillforge watch https://youtu.be/YOUR_VIDEO</span></div>
-  </div>
-  <a class="cta" href="https://github.com/koren-source/skillforge">View on GitHub &rarr;</a>
-</section>
+    <!-- Quick-start modal -->
+    <div id="quickstart-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <div class="modal-card">
+        <button class="modal-close" onclick="closeModal()" aria-label="Close">✕</button>
+        <p class="eyebrow">4 steps. Under 60 seconds.</p>
+        <h2 id="modal-title">Get your agent learning right now</h2>
+        <ol class="quickstart-steps">
+          <li>
+            <span class="step-label">Install yt-dlp (transcript engine)</span>
+            <div class="code-block">
+              <code>brew install yt-dlp</code>
+              <button class="copy-btn" onclick="copyCode(this,'brew install yt-dlp')">Copy</button>
+            </div>
+            <p class="step-hint">Linux/Windows: <em>pip install yt-dlp</em></p>
+          </li>
+          <li>
+            <span class="step-label">Install SkillForge</span>
+            <div class="code-block">
+              <code>npm install -g skillforge</code>
+              <button class="copy-btn" onclick="copyCode(this,'npm install -g skillforge')">Copy</button>
+            </div>
+            <p class="step-hint">Also set <em>ANTHROPIC_API_KEY</em> or <em>OPENAI_API_KEY</em> in your environment.</p>
+          </li>
+          <li>
+            <span class="step-label">Watch a video — preview before saving</span>
+            <div class="code-block">
+              <code>skillforge watch https://youtube.com/watch?v=VIDEO_ID</code>
+              <button class="copy-btn" onclick="copyCode(this,'skillforge watch https://youtube.com/watch?v=VIDEO_ID')">Copy</button>
+            </div>
+            <p class="step-hint">SkillForge previews the skill first — you approve before anything saves to your library.</p>
+          </li>
+          <li>
+            <span class="step-label">Query your library — agents call this</span>
+            <div class="code-block">
+              <code>skillforge recall "sales funnel"</code>
+              <button class="copy-btn" onclick="copyCode(this,'skillforge recall &quot;sales funnel&quot;')">Copy</button>
+            </div>
+            <p class="step-desc">Or run <code>skillforge serve</code> to expose your library as an MCP server — any compatible agent can query it on demand. Skills are saved at <code>~/.skillforge/library/@creator/topic.skill.md</code>.</p>
+          </li>
+        </ol>
+        <div class="modal-actions">
+          <a class="button button-primary" href="https://github.com/koren-source/skillforge" target="_blank" rel="noreferrer">Full docs on GitHub →</a>
+        </div>
+      </div>
+    </div>
 
-<footer>
-  Built with love by <a href="https://cutbox.ai">Cutbox.ai</a> &middot; <a href="https://github.com/koren-source/skillforge">GitHub</a> &middot; MIT License
-</footer>
-</body>
+    <script src="demo.js"></script>
+    <script>
+      function openModal() { document.getElementById('quickstart-modal').classList.add('open'); }
+      function closeModal() { document.getElementById('quickstart-modal').classList.remove('open'); }
+      document.getElementById('quickstart-modal').addEventListener('click', function(e) {
+        if (e.target === this) closeModal();
+      });
+      function copyCode(btn, text) {
+        navigator.clipboard.writeText(text).then(() => {
+          const orig = btn.textContent;
+          btn.textContent = 'Copied!';
+          btn.style.cssText = 'background:#4ade80;color:#000;';
+          setTimeout(() => { btn.textContent = orig; btn.style.cssText = ''; }, 1500);
+        });
+      }
+    </script>
+  </body>
 </html>
