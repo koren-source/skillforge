@@ -285,17 +285,34 @@ async function synthesizeKnowledge({ transcripts, topic, model, intent, outputPa
     }
     if (currentChunk.length > 0) chunks.push(currentChunk);
 
-    // If it's a single huge transcript, split it into text chunks
+    // If it's a single huge transcript, sample strategically for very long videos
     if (chunks.length === 1 && chunks[0].length === 1) {
       const bigTranscript = chunks[0][0];
-      const textChunks = chunkText(bigTranscript.transcript, CHUNK_LIMIT, CHUNK_OVERLAP);
-      const summaries = [];
+      const fullText = bigTranscript.transcript;
+      const totalLen = fullText.length;
 
-      for (let i = 0; i < textChunks.length; i++) {
-        const chunkTranscripts = [
-          { ...bigTranscript, transcript: textChunks[i] },
+      let sampledTranscripts;
+      if (totalLen > 3 * CHUNK_LIMIT) {
+        // For very long videos: sample beginning, middle, and end
+        const third = Math.floor(totalLen / 3);
+        const sampleSize = Math.min(CHUNK_LIMIT, Math.floor(totalLen / 3));
+        sampledTranscripts = [
+          { ...bigTranscript, transcript: fullText.slice(0, sampleSize), title: bigTranscript.title + " [Part 1/3]" },
+          { ...bigTranscript, transcript: fullText.slice(third, third + sampleSize), title: bigTranscript.title + " [Part 2/3]" },
+          { ...bigTranscript, transcript: fullText.slice(totalLen - sampleSize), title: bigTranscript.title + " [Part 3/3]" },
         ];
-        const prompt = buildPrompt({ topic, transcripts: chunkTranscripts });
+      } else {
+        const textChunks = chunkText(fullText, CHUNK_LIMIT, CHUNK_OVERLAP);
+        sampledTranscripts = textChunks.map((chunk, i) => ({
+          ...bigTranscript,
+          transcript: chunk,
+          title: bigTranscript.title + ` [Part ${i+1}/${textChunks.length}]`,
+        }));
+      }
+
+      const summaries = [];
+      for (let i = 0; i < sampledTranscripts.length; i++) {
+        const prompt = buildPrompt({ topic, transcripts: [sampledTranscripts[i]] });
         const chunkResult = await callProvider(prompt, effectiveModel);
         summaries.push(chunkResult);
         await saveCheckpoint(slug, { phase: "chunk", index: i, partial: summaries });
@@ -303,7 +320,7 @@ async function synthesizeKnowledge({ transcripts, topic, model, intent, outputPa
 
       // Merge summaries into one synthesis
       const mergedTranscripts = summaries.map((s, i) => ({
-        title: `Chunk ${i + 1} summary`,
+        title: `Part ${i + 1} summary`,
         url: transcripts[0].url,
         transcript: JSON.stringify(s),
       }));
