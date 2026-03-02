@@ -23,6 +23,7 @@ import {
   slugify,
   slugifyCreator,
 } from "../src/format.js";
+import { resolveCreator } from "../src/creator.js";
 import { scoreVideos } from "../src/score.js";
 import * as propose from "../src/propose.js";
 import * as skillIndex from "../src/skillIndex.js";
@@ -664,10 +665,15 @@ program
         );
       }
 
-      // Detect creator from --creator flag or first transcript's channel
+      // Detect creator from --creator flag, transcript metadata, or URL resolution
       let detectedCreator = options.creator || null;
       if (!detectedCreator && !channelSources) {
-        detectedCreator = transcripts[0]?.channelTitle || 'unknown-creator';
+        detectedCreator = transcripts[0]?.channelTitle || null;
+        // Cache may not have channelTitle — resolve from the source URL as fallback
+        if (!detectedCreator && sourceUrls.length > 0) {
+          detectedCreator = await resolveCreator(sourceUrls[0]);
+        }
+        detectedCreator = detectedCreator || 'unknown-creator';
       }
 
       let destination;
