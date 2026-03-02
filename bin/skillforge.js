@@ -7,14 +7,16 @@ import { Command } from "commander";
 import chalk from "chalk";
 import ora from "ora";
 
+import readline from "node:readline";
 import {
   extractFromUrls,
+  fetchTranscriptForUrl,
   inspectUrl,
   listChannelVideoUrls,
   runYtDlp,
 } from "../src/extract.js";
 import { searchTopic } from "../src/search.js";
-import { synthesizeKnowledge } from "../src/synthesize.js";
+import { synthesizeKnowledge, previewTranscript } from "../src/synthesize.js";
 import {
   formatDocument,
   makeOutputFilename,
@@ -571,6 +573,78 @@ program
     })
   );
 
+// ── watch ─────────────────────────────────────────────────────────────
+program
+  .command("watch <url>")
+  .description("Preview a video's content before building a skill")
+  .option("--model <model>", "AI model to use", "claude-sonnet-4-20250514")
+  .option("--output <path>", "Where to save the generated output", "./output")
+  .option("--format <format>", "Output format: skill, markdown, or json", "skill")
+  .option("--intent <intent>", "Intent string for skill indexing")
+  .action(
+    withErrorHandler(async (url, options) => {
+      const spinner = ora({ text: "Fetching transcript", color: "cyan" }).start();
+      const transcriptData = await fetchTranscriptForUrl(url);
+
+      if (!transcriptData.transcript) {
+        spinner.fail("No transcript available for this video.");
+        return;
+      }
+
+      spinner.text = "Generating preview";
+      const preview = await previewTranscript({
+        transcript: transcriptData.transcript,
+        topic: options.intent || transcriptData.title,
+        model: options.model,
+      });
+
+      spinner.stop();
+
+      process.stdout.write(`\n${chalk.bold(transcriptData.title)}\n\n`);
+      for (const bullet of preview.bullets) {
+        process.stdout.write(`  ${chalk.green("•")} ${bullet}\n`);
+      }
+      process.stdout.write("\n");
+
+      const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+      const answer = await new Promise((resolve) => {
+        rl.question(chalk.bold("Build this skill? [y/N] "), resolve);
+      });
+      rl.close();
+
+      if (answer.trim().toLowerCase() !== "y") {
+        process.stdout.write(chalk.dim("Skipped.\n"));
+        return;
+      }
+
+      const buildSpinner = ora({ text: "Fetching transcript for build", color: "cyan" }).start();
+      const transcripts = [transcriptData];
+      const topic = transcriptData.title || "YouTube Video";
+      const intent = options.intent || "";
+
+      buildSpinner.text = "Synthesizing knowledge with AI";
+      const destination = resolveDestination(options.output, options.format, topic);
+
+      const synthesis = await synthesizeKnowledge({
+        transcripts,
+        topic,
+        model: options.model,
+        intent,
+        outputPath: destination,
+      });
+
+      buildSpinner.text = "Formatting output";
+      const content = formatDocument(options.format, synthesis);
+      await writeOutput(destination, content);
+
+      buildSpinner.succeed(`Skill saved to ${destination}`);
+      process.stdout.write(`${chalk.green("Format:")} ${options.format} | ${chalk.green("Model:")} ${options.model}\n`);
+      if (intent) {
+        process.stdout.write(`${chalk.green("Indexed with intent:")} ${intent}\n`);
+      }
+    })
+  );
+
 // ── recall ────────────────────────────────────────────────────────────
 program
   .command("recall")
@@ -665,6 +739,17 @@ program
           chalk.yellow(`Skill "${options.skill}" was not found in the index.\n`)
         );
       }
+    })
+  );
+
+// ── serve ─────────────────────────────────────────────────────────────
+program
+  .command("serve")
+  .description("Start the SkillForge MCP server (stdio transport)")
+  .action(
+    withErrorHandler(async () => {
+      const { startServer } = await import("../src/mcp.js");
+      await startServer();
     })
   );
 
