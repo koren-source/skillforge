@@ -26,7 +26,7 @@ import {
 import { scoreVideos } from "../src/score.js";
 import * as propose from "../src/propose.js";
 import * as skillIndex from "../src/skillIndex.js";
-import { loadConfig, addTrusted, removeTrusted, isTrusted } from "../src/config.js";
+import { loadConfig, addTrusted, removeTrusted } from "../src/config.js";
 import { checkAuth, getAuthErrorMessage } from "../src/auth.js";
 
 const program = new Command();
@@ -236,7 +236,7 @@ function withErrorHandler(fn) {
 program
   .name("skillforge")
   .description("Turn YouTube videos, channels, and topics into agent-ready skills")
-  .version("0.5.0");
+  .version("0.5.1");
 
 // ── trust ────────────────────────────────────────────────────────────
 const trust = program
@@ -578,15 +578,6 @@ program
           throw new Error("No videos were found for the requested source.");
         }
 
-        // Trust gate: extract creator from URL and enforce trusted-creators list
-        const _channelUrl = (source?.url || source?.channel || options.channel || "");
-        const _handleMatch = _channelUrl.match(/youtube\.com\/@([\w.-]+)/i);
-        const channelCreator = _handleMatch
-          ? `@${_handleMatch[1]}`
-          : (sourceItems.discovered[0]?.channelTitle || null);
-
-        // channelCreator may be null for unknown channels — that's fine, we proceed anyway
-
         // Score all videos by metadata (no transcripts yet)
         spinner.text = `Scoring ${sourceItems.discovered.length} videos against intent`;
         const scored = scoreVideos(sourceItems.discovered, intent);
@@ -679,8 +670,8 @@ program
 
       // Detect creator from --creator flag or first transcript's channel
       let detectedCreator = options.creator || null;
-      if (!detectedCreator && !channelSources && transcripts[0]?.channelTitle) {
-        detectedCreator = transcripts[0].channelTitle;
+      if (!detectedCreator && !channelSources) {
+        detectedCreator = transcripts[0]?.channelTitle || 'unknown-creator';
       }
 
       let destination;
@@ -790,7 +781,7 @@ program
         return;
       }
 
-      const detectedCreator = transcriptData.channelTitle || null;
+      const detectedCreator = transcriptData.channelTitle || 'unknown-creator';
       const videoTitle = transcriptData.title || "YouTube Video";
       spinner.text = `Synthesizing: ${videoTitle}`;
 
