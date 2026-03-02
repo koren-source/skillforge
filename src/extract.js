@@ -4,9 +4,12 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import * as cache from "./cache.js";
 
+// Always pass the node JS runtime so yt-dlp can solve YouTube's JS challenges
+const YT_DLP_BASE_ARGS = ["--js-runtimes", "node:/opt/homebrew/bin/node"];
+
 function runYtDlpOnce(args, options = {}) {
   return new Promise((resolve, reject) => {
-    const child = spawn("yt-dlp", args, {
+    const child = spawn("yt-dlp", [...YT_DLP_BASE_ARGS, ...args], {
       stdio: ["ignore", "pipe", "pipe"],
       ...options,
     });
