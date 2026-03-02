@@ -540,20 +540,68 @@ async function synthesizeKnowledge({ transcripts, topic, model, intent, outputPa
       const textChunks = chunkText(fullText, CHUNK_LIMIT, CHUNK_OVERLAP);
       const chunkExtractions = [];
       for (let i = 0; i < textChunks.length; i++) {
-        const chunkPrompt = buildChunkExtractionPrompt(textChunks[i], topic, i, textChunks.length);
-        const raw = callClaudeCli(chunkPrompt, effectiveModel);
-        try {
-          const parsed = JSON.parse(extractJson(raw));
-          chunkExtractions.push(parsed);
-        } catch (_) {
-          // Skip chunks that fail to parse — don't let one bad chunk kill the whole video
+        const chunkPrompt = buildChunkExtractionPrompt(
+          textChunks[i],
+          topic,
+          i,
+          textChunks.length
+        );
+
+        // Claude CLI can intermittently return empty output during incidents.
+        // Don't let one bad chunk kill the whole video — retry once, then skip.
+        let raw = "";
+        let gotRaw = false;
+        for (let attempt = 0; attempt < 2; attempt++) {
+          try {
+            raw = callClaudeCli(chunkPrompt, effectiveModel);
+            gotRaw = true;
+            break;
+          } catch (err) {
+            if (attempt === 1) {
+              console.warn(
+                `[SkillForge] Chunk ${i + 1}/${textChunks.length} failed: ${err.message}`
+              );
+            }
+          }
         }
+
+        if (gotRaw) {
+          try {
+            const parsed = JSON.parse(extractJson(raw));
+            chunkExtractions.push(parsed);
+          } catch (_) {
+            // Skip chunks that fail to parse — don't let one bad chunk kill the whole video
+          }
+        }
+
         await saveCheckpoint(slug, { phase: "chunk", index: i, count: textChunks.length });
       }
 
       // Final compilation pass — merge all chunk extractions into one skill
-      const compilationPrompt = buildCompilationPrompt(topic, transcripts[0].title, chunkExtractions);
-      result = await callProvider(compilationPrompt, effectiveModel);
+      // If chunk extraction yields nothing, fall back to a 3-part sample.
+      if (chunkExtractions.length === 0) {
+        const fullText = transcripts[0].transcript || "";
+        const sampleSize = 8000;
+        const start = fullText.slice(0, sampleSize);
+        const midStart = Math.max(0, Math.floor(fullText.length / 2) - Math.floor(sampleSize / 2));
+        const mid = fullText.slice(midStart, midStart + sampleSize);
+        const end = fullText.slice(Math.max(0, fullText.length - sampleSize));
+        const sampled = [start, mid, end].join("\n\n---\n\n");
+
+        const prompt = buildPrompt({
+          topic,
+          transcripts: [{
+            title: transcripts[0].title,
+            url: transcripts[0].url,
+            transcript: sampled,
+          }],
+        });
+
+        result = await callProvider(prompt, effectiveModel);
+      } else {
+        const compilationPrompt = buildCompilationPrompt(topic, transcripts[0].title, chunkExtractions);
+        result = await callProvider(compilationPrompt, effectiveModel);
+      }
     } else {
       // Multiple chunks of transcripts
       const summaries = [];
