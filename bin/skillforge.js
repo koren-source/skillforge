@@ -585,23 +585,7 @@ program
           ? `@${_handleMatch[1]}`
           : (sourceItems.discovered[0]?.channelTitle || null);
 
-        if (!channelCreator) {
-          spinner.fail("Could not determine channel creator from URL. Cannot verify trust.");
-          spinner.fail("Use: skillforge trust add \"@CreatorHandle\" first.");
-          process.exitCode = 1;
-          return;
-        }
-
-        const _trusted = await isTrusted(channelCreator);
-        if (!_trusted) {
-          spinner.fail(`Creator "${channelCreator}" is not in your trusted list.`);
-          process.stdout.write(
-            chalk.dim(`Run: skillforge trust add "${channelCreator}"
-`)
-          );
-          process.exitCode = 1;
-          return;
-        }
+        // channelCreator may be null for unknown channels — that's fine, we proceed anyway
 
         // Score all videos by metadata (no transcripts yet)
         spinner.text = `Scoring ${sourceItems.discovered.length} videos against intent`;
