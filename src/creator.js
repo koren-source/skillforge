@@ -65,15 +65,16 @@ async function resolveCreator(url) {
 
     const meta = JSON.parse(stdout);
 
-    // yt-dlp returns channel_url which contains the handle
-    if (meta.channel_url) {
-      const resolved = extractHandleFromUrl(meta.channel_url);
+    // Prefer uploader_url — it typically contains the @handle (e.g. @AlexHormozi)
+    // channel_url often uses the /channel/UC... format which resolves to a raw ID
+    if (meta.uploader_url) {
+      const resolved = extractHandleFromUrl(meta.uploader_url);
       if (resolved) return resolved;
     }
 
-    // Fallback: use uploader_url
-    if (meta.uploader_url) {
-      const resolved = extractHandleFromUrl(meta.uploader_url);
+    // Fallback: channel_url
+    if (meta.channel_url) {
+      const resolved = extractHandleFromUrl(meta.channel_url);
       if (resolved) return resolved;
     }
 
