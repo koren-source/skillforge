@@ -171,7 +171,9 @@ ${sources}
 `.trim();
 }
 
+
 function extractJson(text) {
+  text = stripAnsi(text);
   const fencedMatch = text.match(/```json\s*([\s\S]*?)```/i);
   if (fencedMatch) {
     return fencedMatch[1].trim();
