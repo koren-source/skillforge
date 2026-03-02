@@ -8,7 +8,6 @@ import chalk from "chalk";
 import ora from "ora";
 
 import os from "node:os";
-import readline from "node:readline";
 import {
   extractFromUrls,
   fetchTranscriptForUrl,
@@ -17,7 +16,7 @@ import {
   runYtDlp,
 } from "../src/extract.js";
 import { searchTopic } from "../src/search.js";
-import { synthesizeKnowledge, previewTranscript } from "../src/synthesize.js";
+import { synthesizeKnowledge } from "../src/synthesize.js";
 import {
   formatDocument,
   makeOutputFilename,
@@ -791,7 +790,7 @@ program
 // ── watch ─────────────────────────────────────────────────────────────
 program
   .command("watch <url>")
-  .description("Preview a video's content before building a skill")
+  .description("Build a skill document from a single YouTube video")
   .option("--skill <topic>", "Topic slug for the skill (enables creator-scoped library path)")
   .option("--model <model>", "AI model to use", "claude-sonnet-4-20250514")
   .option("--output <path>", "Where to save the generated output", "./output")
@@ -807,53 +806,12 @@ program
         return;
       }
 
-      spinner.text = "Generating preview";
-      const preview = await previewTranscript({
-        transcript: transcriptData.transcript,
-        topic: options.intent || options.skill || transcriptData.title,
-        model: options.model,
-      });
-
-      spinner.stop();
-
       const detectedCreator = transcriptData.channelTitle || null;
-      if (detectedCreator) {
-        process.stdout.write(`${chalk.dim("Creator:")} ${detectedCreator}\n`);
-      }
+      const videoTitle = transcriptData.title || "YouTube Video";
+      spinner.text = `Synthesizing: ${videoTitle}`;
 
-      process.stdout.write(`\n${chalk.bold(transcriptData.title)}\n\n`);
-      for (const bullet of preview.bullets) {
-        process.stdout.write(`  ${chalk.green("•")} ${bullet}\n`);
-      }
-      process.stdout.write("\n");
-
-      // Check if this would be a merge
-      if (detectedCreator && options.skill) {
-        const creatorSlug = slugifyCreator(detectedCreator);
-        const topicSlug = slugify(options.skill);
-        const libraryPath = path.join(os.homedir(), ".skillforge", "library", creatorSlug, `${topicSlug}.skill.md`);
-        try {
-          await fs.access(libraryPath);
-          process.stdout.write(`${chalk.cyan("Merge:")} will add to existing skill at ${libraryPath}\n\n`);
-        } catch {
-          // New skill
-        }
-      }
-
-      const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-      const answer = await new Promise((resolve) => {
-        rl.question(chalk.bold("Build this skill? [y/N] "), resolve);
-      });
-      rl.close();
-
-      if (answer.trim().toLowerCase() !== "y") {
-        process.stdout.write(chalk.dim("Skipped.\n"));
-        return;
-      }
-
-      const buildSpinner = ora({ text: "Synthesizing knowledge with AI", color: "cyan" }).start();
       const transcripts = [transcriptData];
-      const topic = options.skill || transcriptData.title || "YouTube Video";
+      const topic = options.skill || videoTitle;
       const safeTopic = slugify(topic);
       const intent = options.intent || "";
 
@@ -884,7 +842,7 @@ program
           const newUrls = new Set(transcripts.map((t) => t.url));
           const missingUrls = existingUrls.filter((u) => !newUrls.has(u));
           if (missingUrls.length > 0) {
-            buildSpinner.text = `Merging with ${missingUrls.length} existing source(s)`;
+            spinner.text = `Merging with ${missingUrls.length} existing source(s)`;
             const oldTranscripts = await extractFromUrls(missingUrls, { limit: missingUrls.length });
             transcripts.push(...oldTranscripts);
           }
@@ -895,7 +853,6 @@ program
         destination = resolveDestination(options.output, options.format, topic);
       }
 
-      buildSpinner.text = "Synthesizing knowledge with AI";
       const synthesis = await synthesizeKnowledge({
         transcripts,
         topic,
@@ -905,21 +862,16 @@ program
         creatorMeta,
       });
 
-      buildSpinner.text = "Formatting output";
       const content = formatDocument(options.format, synthesis);
       await writeOutput(destination, content);
 
-      buildSpinner.succeed(`Skill saved to ${destination}`);
+      const frameworkCount = synthesis.frameworks?.length || 0;
+      spinner.succeed(videoTitle);
       if (detectedCreator) {
-        process.stdout.write(`${chalk.green("Creator:")} ${detectedCreator}\n`);
+        process.stdout.write(`  ${chalk.dim("Creator:")} ${detectedCreator}\n`);
       }
-      if (transcripts.length > 1) {
-        process.stdout.write(`${chalk.green("Sources merged:")} ${transcripts.length}\n`);
-      }
-      process.stdout.write(`${chalk.green("Format:")} ${options.format} | ${chalk.green("Model:")} ${options.model}\n`);
-      if (intent) {
-        process.stdout.write(`${chalk.green("Indexed with intent:")} ${intent}\n`);
-      }
+      process.stdout.write(`  ${chalk.dim("Frameworks:")} ${frameworkCount} | ${chalk.dim("Model:")} ${options.model}\n`);
+      process.stdout.write(`  ${chalk.dim("Saved:")} ${destination}\n`);
     })
   );
 
@@ -1045,5 +997,11 @@ program
       await startServer();
     })
   );
+
+// Default command: if first arg looks like a URL, treat as `watch`
+const firstArg = process.argv[2];
+if (firstArg && /^(https?:\/\/|youtube\.com|youtu\.be)/.test(firstArg)) {
+  process.argv.splice(2, 0, "watch");
+}
 
 await program.parseAsync(process.argv);

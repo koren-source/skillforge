@@ -100,17 +100,18 @@ function callClaudeCli(prompt, model = DEFAULT_MODEL) {
   return stripAnsi(result.stdout || "").trim();
 }
 
-function chunkText(text, maxLength) {
+function chunkText(text, maxLength, overlap = 0) {
   if (text.length <= maxLength) {
     return [text];
   }
 
   const chunks = [];
   let cursor = 0;
+  const step = Math.max(1, maxLength - overlap);
 
   while (cursor < text.length) {
     chunks.push(text.slice(cursor, cursor + maxLength));
-    cursor += maxLength;
+    cursor += step;
   }
 
   return chunks;
@@ -119,13 +120,12 @@ function chunkText(text, maxLength) {
 function buildPrompt({ topic, transcripts }) {
   const sources = transcripts
     .map((item, index) => {
-      const truncatedTranscript = chunkText(item.transcript, 30000)[0]; // ~10-12 min of speech
       return [
         `Source ${index + 1}`,
         `Title: ${item.title}`,
         `URL: ${item.url}`,
         "Transcript:",
-        truncatedTranscript,
+        item.transcript,
       ].join("\n");
     })
     .join("\n\n---\n\n");
@@ -139,53 +139,21 @@ Video count: ${transcripts.length}
 Return strict JSON only with this exact schema:
 {
   "topic": "string",
-  "summary": "string",
-  "frameworks": [
-    {
-      "name": "string",
-      "description": "string",
-      "steps": ["string"],
-      "source_titles": ["string"]
-    }
-  ],
-  "tactics": [
-    {
-      "title": "string",
-      "details": "string",
-      "when_to_use": "string",
-      "source_titles": ["string"]
-    }
-  ],
-  "quotes": [
-    {
-      "quote": "string",
-      "speaker": "string",
-      "context": "string",
-      "source_title": "string"
-    }
-  ],
-  "concepts": [
-    {
-      "term": "string",
-      "definition": "string"
-    }
-  ],
-  "processes": [
-    {
-      "name": "string",
-      "steps": ["string"],
-      "source_titles": ["string"]
-    }
-  ],
-  "full_notes": ["string"]
+  "summary": "2-3 sentence summary of what this video teaches",
+  "frameworks": [{"name": "string", "description": "string", "steps": ["string"]}],
+  "tactics": [{"name": "string", "description": "string", "when_to_use": "string"}],
+  "key_quotes": [{"quote": "string", "context": "string"}],
+  "key_numbers": [{"stat": "string", "significance": "string"}],
+  "agent_guidance": "How an AI agent should use this knowledge"
 }
 
 Requirements:
 - Focus on practical, actionable insight, not generic summaries.
-- Extract up to 10 frameworks or tactics total, prioritizing high utility.
+- Extract specific numbers, stats, ratios, and metrics into key_numbers.
+- Frameworks should be step-by-step processes the speaker teaches.
+- Tactics should be specific techniques with clear application context.
 - Quotes must be genuinely memorable and concise.
-- Use specific terminology from the material when available.
-- If different videos disagree, reflect that in the relevant framework or tactic.
+- agent_guidance should explain how an AI agent should apply this knowledge when helping users.
 
 Sources:
 ${sources}
@@ -209,7 +177,7 @@ function extractJson(text) {
   return text.slice(firstBrace, lastBrace + 1);
 }
 
-function normalizeSynthesis(result, transcripts, creatorMeta) {
+function normalizeSynthesis(result, transcripts, creatorMeta, model) {
   const now = new Date().toISOString();
   const topicSlug = slugify(result.topic || "youtube-knowledge");
   const normalized = {
@@ -225,12 +193,12 @@ function normalizeSynthesis(result, transcripts, creatorMeta) {
     generated_at: now,
     built_at: now,
     last_updated: now,
+    model: model || DEFAULT_MODEL,
     frameworks: Array.isArray(result.frameworks) ? result.frameworks : [],
     tactics: Array.isArray(result.tactics) ? result.tactics : [],
-    quotes: Array.isArray(result.quotes) ? result.quotes : [],
-    concepts: Array.isArray(result.concepts) ? result.concepts : [],
-    processes: Array.isArray(result.processes) ? result.processes : [],
-    full_notes: Array.isArray(result.full_notes) ? result.full_notes : [],
+    key_quotes: Array.isArray(result.key_quotes) ? result.key_quotes : [],
+    key_numbers: Array.isArray(result.key_numbers) ? result.key_numbers : [],
+    agent_guidance: result.agent_guidance || "",
   };
 
   if (creatorMeta?.creator) {
@@ -269,7 +237,7 @@ async function synthesizeKnowledge({ transcripts, topic, model, intent, outputPa
   if (checkpoint?.result) {
     console.log("[SkillForge] Resuming from checkpoint:", slug, "(step:", checkpoint.step || "synthesize", ")");
     await removeCheckpoint(slug);
-    const normalized = normalizeSynthesis(checkpoint.result, transcripts, creatorMeta);
+    const normalized = normalizeSynthesis(checkpoint.result, transcripts, creatorMeta, effectiveModel);
     // Save to skill index
     if (intent) {
       const indexEntry = {
@@ -294,9 +262,10 @@ async function synthesizeKnowledge({ transcripts, topic, model, intent, outputPa
     return normalized;
   }
 
-  // Check if transcript is too long — chunk and summarize
+  // Check if transcript is too long — chunk and synthesize each, then merge
   const combined = transcripts.map((t) => t.transcript).join("\n");
-  const CHUNK_LIMIT = 80000;
+  const CHUNK_LIMIT = 25000;
+  const CHUNK_OVERLAP = 2000;
 
   let result;
   if (combined.length > CHUNK_LIMIT) {
@@ -319,7 +288,7 @@ async function synthesizeKnowledge({ transcripts, topic, model, intent, outputPa
     // If it's a single huge transcript, split it into text chunks
     if (chunks.length === 1 && chunks[0].length === 1) {
       const bigTranscript = chunks[0][0];
-      const textChunks = chunkText(bigTranscript.transcript, CHUNK_LIMIT);
+      const textChunks = chunkText(bigTranscript.transcript, CHUNK_LIMIT, CHUNK_OVERLAP);
       const summaries = [];
 
       for (let i = 0; i < textChunks.length; i++) {
@@ -366,7 +335,7 @@ async function synthesizeKnowledge({ transcripts, topic, model, intent, outputPa
   // Save checkpoint before normalization
   await saveCheckpoint(slug, { result });
 
-  const normalized = normalizeSynthesis(result, transcripts, creatorMeta);
+  const normalized = normalizeSynthesis(result, transcripts, creatorMeta, effectiveModel);
 
   // Save to skill index if intent was provided
   if (intent) {
