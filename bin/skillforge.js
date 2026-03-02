@@ -579,18 +579,29 @@ program
           throw new Error("No videos were found for the requested source.");
         }
 
-        // Check if channel creator is trusted
-        const channelCreator = sourceItems.discovered[0]?.channelTitle;
-        if (channelCreator) {
-          const trusted = await isTrusted(channelCreator);
-          if (!trusted) {
-            spinner.fail(`Creator "${channelCreator}" is not in your trusted list.`);
-            process.stdout.write(
-              chalk.dim(`Run: skillforge trust add "@${channelCreator.replace(/^@/, "")}"\n`)
-            );
-            process.exitCode = 1;
-            return;
-          }
+        // Trust gate: extract creator from URL and enforce trusted-creators list
+        const _channelUrl = (source?.url || source?.channel || options.channel || "");
+        const _handleMatch = _channelUrl.match(/youtube\.com\/@([\w.-]+)/i);
+        const channelCreator = _handleMatch
+          ? `@${_handleMatch[1]}`
+          : (sourceItems.discovered[0]?.channelTitle || null);
+
+        if (!channelCreator) {
+          spinner.fail("Could not determine channel creator from URL. Cannot verify trust.");
+          spinner.fail("Use: skillforge trust add \"@CreatorHandle\" first.");
+          process.exitCode = 1;
+          return;
+        }
+
+        const _trusted = await isTrusted(channelCreator);
+        if (!_trusted) {
+          spinner.fail(`Creator "${channelCreator}" is not in your trusted list.`);
+          process.stdout.write(
+            chalk.dim(`Run: skillforge trust add "${channelCreator}"
+`)
+          );
+          process.exitCode = 1;
+          return;
         }
 
         // Score all videos by metadata (no transcripts yet)
