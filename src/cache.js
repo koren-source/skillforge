@@ -30,13 +30,13 @@ async function has(videoId) {
 }
 
 async function get(videoId) {
-  const raw = await fs.readFile(cachePath(videoId), "utf8");
   try {
+    const raw = await fs.readFile(cachePath(videoId), "utf8");
     const entry = JSON.parse(raw);
     if (!entry.cachedAt || Date.now() - entry.cachedAt > ttlMs()) return null;
     return entry.transcript;
   } catch {
-    // Legacy plain-text entry without cachedAt — treat as expired
+    // File missing, corrupt, or legacy plain-text entry — treat as cache miss
     return null;
   }
 }

@@ -4,7 +4,7 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import * as cache from "./cache.js";
 
-function runYtDlp(args, options = {}) {
+function runYtDlpOnce(args, options = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn("yt-dlp", args, {
       stdio: ["ignore", "pipe", "pipe"],
@@ -48,6 +48,39 @@ function runYtDlp(args, options = {}) {
       resolve({ stdout, stderr });
     });
   });
+}
+
+const MAX_RETRIES = 3;
+const BASE_DELAY_MS = 5000;
+
+function isRateLimitError(errorMessage) {
+  const msg = String(errorMessage).toLowerCase();
+  return msg.includes("429") || msg.includes("too many requests") || msg.includes("rate limit");
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function runYtDlp(args, options = {}) {
+  let lastError;
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      return await runYtDlpOnce(args, options);
+    } catch (error) {
+      lastError = error;
+      if (isRateLimitError(error.message) && attempt < MAX_RETRIES) {
+        const delay = BASE_DELAY_MS * Math.pow(2, attempt);
+        process.stderr.write(
+          `[skillforge] Rate limited by YouTube (429). Retrying in ${Math.round(delay / 1000)}s (attempt ${attempt + 1}/${MAX_RETRIES})...\n`
+        );
+        await sleep(delay);
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw lastError;
 }
 
 function parseJsonLines(text) {

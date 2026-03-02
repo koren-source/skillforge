@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { extractFromUrls, fetchTranscriptForUrl, listChannelVideoUrls } from "./extract.js";
 import { searchTopic } from "./search.js";
 import { synthesizeKnowledge, previewTranscript } from "./synthesize.js";
@@ -11,7 +12,7 @@ const LIBRARY_DIR = path.join(os.homedir(), ".skillforge", "library");
 
 function loadExistingSkillMeta(filePath) {
   try {
-    const content = require("node:fs").readFileSync(filePath, "utf8");
+    const content = readFileSync(filePath, "utf8");
     const lines = content.split("\n");
     if (lines[0] !== "---") return { sourceVideoUrls: [] };
 
@@ -68,7 +69,7 @@ export async function build({
   topic,
   intent,
   auto = false,
-  model = "claude-sonnet-4-20250514",
+  model = "claude-sonnet-4-5",
   output = "./output",
   format = "skill",
   limit = 10,
@@ -180,7 +181,7 @@ export async function build({
 export async function watch({
   url,
   skill,
-  model = "claude-sonnet-4-20250514",
+  model = "claude-sonnet-4-5",
   output = "./output",
   format = "skill",
   intent,
@@ -190,7 +191,7 @@ export async function watch({
   if (typeof confirm !== "function") throw new Error("A confirm callback is required.");
 
   const transcriptData = await fetchTranscriptForUrl(url);
-  if (!transcriptData.transcript) {
+  if (!transcriptData || !transcriptData.transcript) {
     throw new Error("No transcript available for this video.");
   }
 

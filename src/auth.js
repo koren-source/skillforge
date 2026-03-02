@@ -39,7 +39,7 @@ function checkClaudeCliAuth({ validate = false } = {}) {
   // Test authentication with a simple prompt
   const testResult = spawnSync(
     "claude",
-    ["-p", "respond with only the word READY", "--model", "claude-3-5-haiku-20241022"],
+    ["-p", "respond with only the word READY", "--model", "claude-haiku-4-5-20251001"],
     {
       encoding: "utf8",
       timeout: 30000, // 30 second timeout

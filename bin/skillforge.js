@@ -328,7 +328,7 @@ program
         process.stdout.write(`  ${chalk.dim("Authenticated:")} ${chalk.green("yes")}\n`);
         process.stdout.write("\n");
         process.stdout.write(chalk.green("Claude CLI authenticated and working.\n"));
-        process.stdout.write(chalk.dim("Default model: claude-sonnet-4-20250514\n"));
+        process.stdout.write(chalk.dim("Default model: claude-sonnet-4-5\n"));
       } else {
         process.stdout.write(`  ${chalk.dim("Authenticated:")} ${chalk.red("no")}\n`);
         if (auth.error) {
@@ -541,7 +541,7 @@ program
   .option(
     "--model <model>",
     "AI model to use",
-    "claude-sonnet-4-20250514"
+    "claude-sonnet-4-5"
   )
   .action(
     withErrorHandler(async (url, options) => {
@@ -565,10 +565,6 @@ program
         if (!intent) {
           throw new Error("--auto requires --intent to score videos.");
         }
-        if (!options.channel && !(options.channels && options.channels.length)) {
-          throw new Error("--auto requires --channel or --channels.");
-        }
-
         const source = resolveSource(url, options);
 
         // Gather metadata (no transcripts) — uses larger limit for scoring pool
@@ -767,7 +763,7 @@ program
   .command("watch <url>")
   .description("Build a skill document from a single YouTube video")
   .option("--skill <topic>", "Topic slug for the skill (enables creator-scoped library path)")
-  .option("--model <model>", "AI model to use", "claude-sonnet-4-20250514")
+  .option("--model <model>", "AI model to use", "claude-sonnet-4-5")
   .option("--output <path>", "Where to save the generated output", "./output")
   .option("--format <format>", "Output format: skill, markdown, or json", "skill")
   .option("--intent <intent>", "Intent string for skill indexing")
@@ -776,7 +772,7 @@ program
       const spinner = ora({ text: "Fetching transcript", color: "cyan" }).start();
       const transcriptData = await fetchTranscriptForUrl(url);
 
-      if (!transcriptData.transcript) {
+      if (!transcriptData || !transcriptData.transcript) {
         spinner.fail("No transcript available for this video.");
         return;
       }

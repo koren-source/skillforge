@@ -30,7 +30,7 @@ function formatSkill(data) {
   const sourceTitle = data.source_titles?.[0] || "YouTube Video";
   const creatorPart = data.creator ? `${data.creator} — ` : "";
   const datePart = formatDate(data.built_at || data.generated_at);
-  const modelPart = data.model || "claude-sonnet-4-20250514";
+  const modelPart = data.model || "claude-sonnet-4-5";
 
   const frameworks = data.frameworks
     .map((framework) => {

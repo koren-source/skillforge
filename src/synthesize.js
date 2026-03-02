@@ -7,7 +7,7 @@ import * as skillIndex from "./skillIndex.js";
 import { slugify, slugifyCreator } from "./format.js";
 
 const CHECKPOINT_DIR = path.join(os.homedir(), ".skillforge", "checkpoints");
-const DEFAULT_MODEL = "claude-sonnet-4-20250514";
+const DEFAULT_MODEL = "claude-sonnet-4-5";
 
 async function ensureCheckpointDir() {
   await fs.mkdir(CHECKPOINT_DIR, { recursive: true });
@@ -513,7 +513,6 @@ async function synthesizeKnowledge({ transcripts, topic, model, intent, outputPa
     if (chunks.length === 1 && chunks[0].length === 1) {
       const bigTranscript = chunks[0][0];
       const fullText = bigTranscript.transcript;
-      const totalLen = fullText.length;
 
       // True sequential chunking: extract from every chunk, then compile
       const textChunks = chunkText(fullText, CHUNK_LIMIT, CHUNK_OVERLAP);

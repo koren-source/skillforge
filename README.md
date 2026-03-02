@@ -91,6 +91,57 @@ skillforge list
 #   ↳ the-mathematics-of-business-explained  (4 frameworks, built 2026-03-01)
 ```
 
+### `skillforge build [url]`
+Build a skill from a channel, topic, multiple URLs, or a saved proposal.
+
+```bash
+# Build from a channel (auto-score top videos by intent)
+skillforge build --auto --channel https://youtube.com/@AlexHormozi --intent "pricing"
+
+# Build from specific URLs
+skillforge build --urls "https://youtu.be/abc,https://youtu.be/def" --intent "outreach"
+
+# Build from a saved proposal
+skillforge build --proposal abc12345
+```
+
+### `skillforge scan <url>`
+Score all videos from a channel by relevance to an intent and save a proposal for review.
+
+```bash
+skillforge scan https://youtube.com/@AlexHormozi --intent "retention"
+```
+
+### `skillforge suggest --topic "topic"`
+Search YouTube for channels related to a topic.
+
+```bash
+skillforge suggest --topic "meta ads scaling"
+```
+
+### `skillforge trust add|remove|list`
+Manage your trusted creators list.
+
+```bash
+skillforge trust add @AlexHormozi
+skillforge trust list
+skillforge trust remove @AlexHormozi
+```
+
+### `skillforge prune --skill <slug>`
+Remove a skill from the index.
+
+```bash
+skillforge prune --skill cold-email-outreach
+```
+
+### `skillforge serve`
+Start the SkillForge MCP server for Claude Code integration (stdio transport).
+
+```bash
+skillforge serve
+```
+
 ### `skillforge check-auth`
 Verify your Claude CLI is set up correctly.
 
