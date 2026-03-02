@@ -10,12 +10,19 @@ async function ensureCacheDir() {
 
 function cachePath(videoId) {
   const safeId = videoId.replace(/[^a-zA-Z0-9_-]/g, "_");
-  return path.join(CACHE_DIR, `${safeId}.txt`);
+  return path.join(CACHE_DIR, `${safeId}.json`);
+}
+
+function ttlMs() {
+  const days = Number(process.env.SKILLFORGE_CACHE_TTL_DAYS) || 7;
+  return days * 86400000;
 }
 
 async function has(videoId) {
   try {
-    await fs.access(cachePath(videoId));
+    const raw = await fs.readFile(cachePath(videoId), "utf8");
+    const entry = JSON.parse(raw);
+    if (!entry.cachedAt || Date.now() - entry.cachedAt > ttlMs()) return false;
     return true;
   } catch {
     return false;
@@ -23,12 +30,21 @@ async function has(videoId) {
 }
 
 async function get(videoId) {
-  return fs.readFile(cachePath(videoId), "utf8");
+  const raw = await fs.readFile(cachePath(videoId), "utf8");
+  try {
+    const entry = JSON.parse(raw);
+    if (!entry.cachedAt || Date.now() - entry.cachedAt > ttlMs()) return null;
+    return entry.transcript;
+  } catch {
+    // Legacy plain-text entry without cachedAt — treat as expired
+    return null;
+  }
 }
 
 async function set(videoId, transcript) {
   await ensureCacheDir();
-  await fs.writeFile(cachePath(videoId), transcript, "utf8");
+  const entry = { transcript, cachedAt: Date.now() };
+  await fs.writeFile(cachePath(videoId), JSON.stringify(entry), "utf8");
 }
 
 export { get, set, has };

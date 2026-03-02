@@ -33,6 +33,34 @@ function collectUrls(value) {
     .filter(Boolean);
 }
 
+function dedupTokenize(text) {
+  return String(text || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((w) => w.length > 2);
+}
+
+function titleTokenOverlap(a, b) {
+  const tokensA = dedupTokenize(a);
+  const tokensB = new Set(dedupTokenize(b));
+  if (tokensA.length === 0 || tokensB.size === 0) return 0;
+  let matches = 0;
+  for (const t of tokensA) {
+    if (tokensB.has(t)) matches++;
+  }
+  return matches / Math.max(tokensA.length, tokensB.size);
+}
+
+function deduplicateTranscripts(transcripts) {
+  const kept = [];
+  for (const t of transcripts) {
+    const isDup = kept.some((k) => titleTokenOverlap(k.title, t.title) > 0.7);
+    if (!isDup) kept.push(t);
+  }
+  return kept;
+}
+
 function resolveSource(inputUrl, options) {
   const sources = [
     inputUrl ? { type: "url", value: inputUrl } : null,
@@ -475,6 +503,19 @@ program
         limit: sourceUrls.length,
       });
 
+      // Deduplicate across channels (title token overlap > 70%)
+      if (channelSources && channelSources.length > 1) {
+        const before = transcripts.length;
+        const deduped = deduplicateTranscripts(transcripts);
+        transcripts.length = 0;
+        transcripts.push(...deduped);
+        if (before !== transcripts.length) {
+          process.stdout.write(
+            chalk.dim(`Deduplicated: ${before} → ${transcripts.length} transcripts\n`)
+          );
+        }
+      }
+
       if (!transcripts.length) {
         throw new Error(
           "No transcripts were available. Try a different set of videos or verify subtitle availability."
@@ -499,6 +540,7 @@ program
       // Attach channel sources for multi-channel builds
       if (channelSources) {
         synthesis.sources = channelSources;
+        synthesis.merged_from_channels = channelSources;
       }
 
       spinner.text = "Formatting output";

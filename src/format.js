@@ -101,6 +101,12 @@ function formatSkill(data) {
       frontmatter.push(`  - "${src}"`);
     }
   }
+  if (data.merged_from_channels?.length) {
+    frontmatter.push(`merged_from_channels:`);
+    for (const ch of data.merged_from_channels) {
+      frontmatter.push(`  - "${ch}"`);
+    }
+  }
   frontmatter.push(`---`);
 
   return `${frontmatter.join("\n")}

@@ -107,7 +107,12 @@ function parseVtt(vttContent) {
 async function readFirstSubtitleFile(tempDir) {
   const files = await fs.readdir(tempDir);
   const subtitleFile = files.find((file) => file.endsWith(".vtt"));
-  return subtitleFile ? path.join(tempDir, subtitleFile) : null;
+  if (!subtitleFile) return null;
+  const isAuto = /\.auto\./.test(subtitleFile) || /asr/.test(subtitleFile);
+  return {
+    path: path.join(tempDir, subtitleFile),
+    captionSource: isAuto ? "auto" : "manual",
+  };
 }
 
 async function fetchVideoMetadata(url) {
@@ -167,16 +172,20 @@ async function fetchTranscriptForUrl(url) {
       { cwd: tempDir }
     );
 
-    const subtitlePath = await readFirstSubtitleFile(tempDir);
-    if (!subtitlePath) {
+    const subtitleResult = await readFirstSubtitleFile(tempDir);
+    if (!subtitleResult) {
       return null;
     }
 
-    const vttContent = await fs.readFile(subtitlePath, "utf8");
+    const vttContent = await fs.readFile(subtitleResult.path, "utf8");
     const transcript = parseVtt(vttContent);
 
     if (!transcript.trim()) {
       return null;
+    }
+
+    if (subtitleResult.captionSource === "auto") {
+      console.warn(`[SkillForge] Warning: using auto-generated captions for: ${metadata.title || url}`);
     }
 
     // Save to cache
@@ -189,6 +198,7 @@ async function fetchTranscriptForUrl(url) {
       title: metadata.title || url,
       channelTitle: metadata.channel || metadata.uploader || null,
       transcript,
+      captionSource: subtitleResult.captionSource,
     };
   } catch (error) {
     const message = String(error.message || "");

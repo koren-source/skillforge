@@ -8,7 +8,7 @@
 
 SkillForge is an open-source Node.js CLI that turns YouTube videos, channels, playlists, and search topics into structured knowledge files for AI agents. It pulls transcripts with `yt-dlp`, synthesizes the material with your own LLM API keys, and exports the result as an agent-ready `SKILL.md`, a clean Markdown brief, or structured JSON. The project is built so any agent or human can bring their own keys and generate reusable skills from public video knowledge.
 
-> Screenshot placeholder: add a terminal capture of `skillforge build --topic "meta ads"` producing a generated `SKILL.md`.
+> Run `skillforge build --topic "meta ads"` and a `SKILL.md` appears in `./output/` in under a minute.
 
 ## What It Does
 

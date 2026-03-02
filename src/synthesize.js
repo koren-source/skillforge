@@ -277,6 +277,7 @@ async function synthesizeKnowledge({ transcripts, topic, model, intent, outputPa
   // Check for checkpoint
   const checkpoint = await loadCheckpoint(slug);
   if (checkpoint?.result) {
+    console.log("[SkillForge] Resuming from checkpoint:", slug, "(step:", checkpoint.step || "synthesize", ")");
     await removeCheckpoint(slug);
     const normalized = normalizeSynthesis(checkpoint.result, transcripts);
     // Save to skill index
