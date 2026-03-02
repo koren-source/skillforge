@@ -7,6 +7,7 @@ import { Command } from "commander";
 import chalk from "chalk";
 import ora from "ora";
 
+import os from "node:os";
 import readline from "node:readline";
 import {
   extractFromUrls,
@@ -21,6 +22,7 @@ import {
   formatDocument,
   makeOutputFilename,
   slugify,
+  slugifyCreator,
 } from "../src/format.js";
 import { scoreVideos } from "../src/score.js";
 import * as propose from "../src/propose.js";
@@ -409,6 +411,7 @@ program
   .option("--topic <topic>", "Search YouTube for a topic and auto-build")
   .option("--urls <urls>", "Comma-separated list of specific YouTube URLs", collectUrls)
   .option("--intent <intent>", "Intent string for skill indexing")
+  .option("--creator <name>", "Creator name for library scoping")
   .option("--auto", "Skip proposal review and build directly")
   .option(
     "--output <path>",
@@ -524,19 +527,59 @@ program
         );
       }
 
-      spinner.text = "Synthesizing knowledge with AI";
-      const destination = resolveDestination(
-        options.output,
-        options.format,
-        topic
-      );
+      // Detect creator from --creator flag or first transcript's channel
+      let detectedCreator = options.creator || null;
+      if (!detectedCreator && !channelSources && transcripts[0]?.channelTitle) {
+        detectedCreator = transcripts[0].channelTitle;
+      }
 
+      let destination;
+      let creatorMeta = null;
+      const safeTopic = slugify(topic || "skillforge-output");
+
+      if (detectedCreator && !channelSources) {
+        const creatorSlug = slugifyCreator(detectedCreator);
+        creatorMeta = { creator: detectedCreator, creatorSlug };
+        destination = path.join(os.homedir(), ".skillforge", "library", creatorSlug, `${safeTopic}.skill.md`);
+
+        // Merge: load existing source URLs and re-fetch cached transcripts
+        try {
+          const existingContent = await fs.readFile(destination, "utf8");
+          const existingUrls = [];
+          let inSV = false;
+          for (const line of existingContent.split("\n")) {
+            if (line === "---" && inSV) break;
+            if (line.startsWith("source_videos:")) { inSV = true; continue; }
+            if (inSV) {
+              const m = line.match(/^\s+-\s+url:\s+"([^"]+)"/);
+              const m2 = line.match(/^\s+-\s+"([^"]+)"/);
+              if (m) existingUrls.push(m[1]);
+              else if (m2) existingUrls.push(m2[1]);
+              else if (!line.match(/^\s+date:/)) inSV = false;
+            }
+          }
+          const newUrls = new Set(transcripts.map((t) => t.url));
+          const missingUrls = existingUrls.filter((u) => !newUrls.has(u));
+          if (missingUrls.length > 0) {
+            spinner.text = `Merging with ${missingUrls.length} existing source(s)`;
+            const oldTranscripts = await extractFromUrls(missingUrls, { limit: missingUrls.length });
+            transcripts.push(...oldTranscripts);
+          }
+        } catch {
+          // No existing file — fresh build
+        }
+      } else {
+        destination = resolveDestination(options.output, options.format, topic);
+      }
+
+      spinner.text = "Synthesizing knowledge with AI";
       const synthesis = await synthesizeKnowledge({
         transcripts,
         topic,
         model: options.model,
         intent,
         outputPath: destination,
+        creatorMeta,
       });
 
       // Attach channel sources for multi-channel builds
@@ -552,6 +595,11 @@ program
 
       spinner.succeed(`SkillForge output saved to ${destination}`);
 
+      if (detectedCreator) {
+        process.stdout.write(
+          `${chalk.green("Creator:")} ${detectedCreator}\n`
+        );
+      }
       process.stdout.write(
         `${chalk.green("Processed transcripts:")} ${transcripts.length}\n`
       );
@@ -577,6 +625,7 @@ program
 program
   .command("watch <url>")
   .description("Preview a video's content before building a skill")
+  .option("--skill <topic>", "Topic slug for the skill (enables creator-scoped library path)")
   .option("--model <model>", "AI model to use", "claude-sonnet-4-20250514")
   .option("--output <path>", "Where to save the generated output", "./output")
   .option("--format <format>", "Output format: skill, markdown, or json", "skill")
@@ -594,17 +643,35 @@ program
       spinner.text = "Generating preview";
       const preview = await previewTranscript({
         transcript: transcriptData.transcript,
-        topic: options.intent || transcriptData.title,
+        topic: options.intent || options.skill || transcriptData.title,
         model: options.model,
       });
 
       spinner.stop();
+
+      const detectedCreator = transcriptData.channelTitle || null;
+      if (detectedCreator) {
+        process.stdout.write(`${chalk.dim("Creator:")} ${detectedCreator}\n`);
+      }
 
       process.stdout.write(`\n${chalk.bold(transcriptData.title)}\n\n`);
       for (const bullet of preview.bullets) {
         process.stdout.write(`  ${chalk.green("•")} ${bullet}\n`);
       }
       process.stdout.write("\n");
+
+      // Check if this would be a merge
+      if (detectedCreator && options.skill) {
+        const creatorSlug = slugifyCreator(detectedCreator);
+        const topicSlug = slugify(options.skill);
+        const libraryPath = path.join(os.homedir(), ".skillforge", "library", creatorSlug, `${topicSlug}.skill.md`);
+        try {
+          await fs.access(libraryPath);
+          process.stdout.write(`${chalk.cyan("Merge:")} will add to existing skill at ${libraryPath}\n\n`);
+        } catch {
+          // New skill
+        }
+      }
 
       const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
       const answer = await new Promise((resolve) => {
@@ -617,20 +684,58 @@ program
         return;
       }
 
-      const buildSpinner = ora({ text: "Fetching transcript for build", color: "cyan" }).start();
+      const buildSpinner = ora({ text: "Synthesizing knowledge with AI", color: "cyan" }).start();
       const transcripts = [transcriptData];
-      const topic = transcriptData.title || "YouTube Video";
+      const topic = options.skill || transcriptData.title || "YouTube Video";
+      const safeTopic = slugify(topic);
       const intent = options.intent || "";
 
-      buildSpinner.text = "Synthesizing knowledge with AI";
-      const destination = resolveDestination(options.output, options.format, topic);
+      let destination;
+      let creatorMeta = null;
 
+      if (detectedCreator) {
+        const creatorSlug = slugifyCreator(detectedCreator);
+        creatorMeta = { creator: detectedCreator, creatorSlug };
+        destination = path.join(os.homedir(), ".skillforge", "library", creatorSlug, `${safeTopic}.skill.md`);
+
+        // Merge: load existing source URLs and re-fetch cached transcripts
+        try {
+          const existingContent = await fs.readFile(destination, "utf8");
+          const existingUrls = [];
+          let inSV = false;
+          for (const line of existingContent.split("\n")) {
+            if (line === "---" && inSV) break;
+            if (line.startsWith("source_videos:")) { inSV = true; continue; }
+            if (inSV) {
+              const m = line.match(/^\s+-\s+url:\s+"([^"]+)"/);
+              const m2 = line.match(/^\s+-\s+"([^"]+)"/);
+              if (m) existingUrls.push(m[1]);
+              else if (m2) existingUrls.push(m2[1]);
+              else if (!line.match(/^\s+date:/)) inSV = false;
+            }
+          }
+          const newUrls = new Set(transcripts.map((t) => t.url));
+          const missingUrls = existingUrls.filter((u) => !newUrls.has(u));
+          if (missingUrls.length > 0) {
+            buildSpinner.text = `Merging with ${missingUrls.length} existing source(s)`;
+            const oldTranscripts = await extractFromUrls(missingUrls, { limit: missingUrls.length });
+            transcripts.push(...oldTranscripts);
+          }
+        } catch {
+          // No existing file — fresh build
+        }
+      } else {
+        destination = resolveDestination(options.output, options.format, topic);
+      }
+
+      buildSpinner.text = "Synthesizing knowledge with AI";
       const synthesis = await synthesizeKnowledge({
         transcripts,
         topic,
         model: options.model,
         intent,
         outputPath: destination,
+        creatorMeta,
       });
 
       buildSpinner.text = "Formatting output";
@@ -638,6 +743,12 @@ program
       await writeOutput(destination, content);
 
       buildSpinner.succeed(`Skill saved to ${destination}`);
+      if (detectedCreator) {
+        process.stdout.write(`${chalk.green("Creator:")} ${detectedCreator}\n`);
+      }
+      if (transcripts.length > 1) {
+        process.stdout.write(`${chalk.green("Sources merged:")} ${transcripts.length}\n`);
+      }
       process.stdout.write(`${chalk.green("Format:")} ${options.format} | ${chalk.green("Model:")} ${options.model}\n`);
       if (intent) {
         process.stdout.write(`${chalk.green("Indexed with intent:")} ${intent}\n`);
@@ -664,9 +775,13 @@ program
       );
       for (const skill of results) {
         const rel = Math.round((skill.relevance || 0) * 100);
+        const displaySlug = skill.compositeSlug || skill.slug;
         process.stdout.write(
-          `  ${chalk.green(String(rel).padStart(3) + "%")}  ${chalk.bold(skill.name)} ${chalk.dim("(" + skill.slug + ")")}\n`
+          `  ${chalk.green(String(rel).padStart(3) + "%")}  ${chalk.bold(skill.name)} ${chalk.dim("(" + displaySlug + ")")}\n`
         );
+        if (skill.creator) {
+          process.stdout.write(`        ${chalk.dim("Creator:")} ${skill.creator}\n`);
+        }
         if (skill.intent) {
           process.stdout.write(`        ${chalk.dim("Intent:")} ${skill.intent}\n`);
         }
@@ -684,9 +799,10 @@ program
   .description("List all saved skills in the library")
   .action(
     withErrorHandler(async () => {
-      const skills = await skillIndex.list();
+      const groups = await skillIndex.listByCreator();
+      const allKeys = Object.keys(groups);
 
-      if (skills.length === 0) {
+      if (allKeys.length === 0) {
         process.stdout.write(chalk.yellow("No skills in the library yet.\n"));
         process.stdout.write(
           chalk.dim("Run `skillforge scan` then `skillforge build` to create your first skill.\n")
@@ -694,19 +810,29 @@ program
         return;
       }
 
-      process.stdout.write(chalk.bold(`${skills.length} skill(s) in library:\n\n`));
-      for (const skill of skills) {
-        process.stdout.write(
-          `  ${chalk.bold(skill.name)} ${chalk.dim("(" + skill.slug + ")")}\n`
-        );
-        if (skill.domain) {
-          process.stdout.write(`    ${chalk.dim("Domain:")} ${skill.domain}\n`);
+      const total = allKeys.reduce((sum, k) => sum + groups[k].length, 0);
+      process.stdout.write(chalk.bold(`${total} skill(s) in library:\n\n`));
+
+      for (const creatorSlug of allKeys) {
+        const skills = groups[creatorSlug];
+        if (creatorSlug === "_ungrouped") {
+          process.stdout.write(chalk.bold("  Ungrouped\n"));
+        } else {
+          const creatorName = skills[0]?.creator || creatorSlug;
+          process.stdout.write(chalk.bold(`  ${creatorName} ${chalk.dim("(" + creatorSlug + ")")}\n`));
         }
-        if (skill.tags?.length) {
-          process.stdout.write(`    ${chalk.dim("Tags:")} ${skill.tags.join(", ")}\n`);
-        }
-        if (skill.createdAt) {
-          process.stdout.write(`    ${chalk.dim("Created:")} ${skill.createdAt}\n`);
+
+        for (const skill of skills) {
+          const displaySlug = skill.compositeSlug || skill.slug;
+          process.stdout.write(
+            `    ${chalk.bold(skill.name)} ${chalk.dim("(" + displaySlug + ")")}\n`
+          );
+          if (skill.tags?.length) {
+            process.stdout.write(`      ${chalk.dim("Tags:")} ${skill.tags.join(", ")}\n`);
+          }
+          if (skill.createdAt) {
+            process.stdout.write(`      ${chalk.dim("Created:")} ${skill.createdAt}\n`);
+          }
         }
         process.stdout.write("\n");
       }

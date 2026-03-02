@@ -148,6 +148,7 @@ async function fetchTranscriptForUrl(url) {
       url,
       title: metadata.title || url,
       channelTitle: metadata.channel || metadata.uploader || null,
+      channelUrl: metadata.channel_url || metadata.uploader_url || null,
       transcript,
     };
   }
@@ -197,6 +198,7 @@ async function fetchTranscriptForUrl(url) {
       url,
       title: metadata.title || url,
       channelTitle: metadata.channel || metadata.uploader || null,
+      channelUrl: metadata.channel_url || metadata.uploader_url || null,
       transcript,
       captionSource: subtitleResult.captionSource,
     };

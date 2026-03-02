@@ -6,6 +6,16 @@ function slugify(input) {
     .slice(0, 80);
 }
 
+function slugifyCreator(name) {
+  if (!name) return "@unknown";
+  const slug = String(name)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80);
+  return `@${slug || "unknown"}`;
+}
+
 function formatDate(isoString) {
   return new Date(isoString).toLocaleDateString("en-US", {
     year: "numeric",
@@ -89,10 +99,25 @@ function formatSkill(data) {
     `usage: "${usage.replace(/"/g, '\\"')}"`,
     `built_at: "${data.built_at || data.generated_at}"`,
   ];
+  if (data.creator) {
+    frontmatter.push(`creator: "${data.creator}"`);
+    frontmatter.push(`creator_slug: "${data.creator_slug || slugifyCreator(data.creator)}"`);
+  }
+  if (data.topic_slug) {
+    frontmatter.push(`topic: "${data.topic_slug}"`);
+  }
+  if (data.last_updated) {
+    frontmatter.push(`last_updated: "${data.last_updated}"`);
+  }
   if (data.source_videos?.length) {
     frontmatter.push(`source_videos:`);
-    for (const url of data.source_videos) {
-      frontmatter.push(`  - "${url}"`);
+    for (const sv of data.source_videos) {
+      if (typeof sv === "object" && sv.url) {
+        frontmatter.push(`  - url: "${sv.url}"`);
+        if (sv.date) frontmatter.push(`    date: "${sv.date}"`);
+      } else {
+        frontmatter.push(`  - url: "${sv}"`);
+      }
     }
   }
   if (data.sources?.length) {
@@ -264,4 +289,5 @@ export {
   formatDocument,
   makeOutputFilename,
   slugify,
+  slugifyCreator,
 };

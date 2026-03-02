@@ -4,6 +4,7 @@ import path from "node:path";
 import os from "node:os";
 
 const DATA_DIR = path.join(os.homedir(), ".skillforge");
+const LIBRARY_DIR = path.join(DATA_DIR, "library");
 const INDEX_PATH = path.join(DATA_DIR, "index.json");
 
 async function ensureDir() {
@@ -28,8 +29,11 @@ async function writeIndex(entries) {
 async function add(skill) {
   const entries = await readIndex();
 
-  // Replace existing entry with same slug
-  const idx = entries.findIndex((e) => e.slug === skill.slug);
+  // Dedup on compositeSlug if present, otherwise fall back to slug
+  const matchKey = skill.compositeSlug || skill.slug;
+  const idx = entries.findIndex(
+    (e) => (e.compositeSlug || e.slug) === matchKey
+  );
   const entry = {
     name: skill.name,
     slug: skill.slug,
@@ -41,6 +45,11 @@ async function add(skill) {
     createdAt: skill.createdAt || new Date().toISOString(),
     builtAt: skill.builtAt || new Date().toISOString(),
   };
+
+  if (skill.creator) entry.creator = skill.creator;
+  if (skill.creatorSlug) entry.creatorSlug = skill.creatorSlug;
+  if (skill.compositeSlug) entry.compositeSlug = skill.compositeSlug;
+  if (skill.sourceVideos) entry.sourceVideos = skill.sourceVideos;
 
   if (idx >= 0) {
     entries[idx] = entry;
@@ -72,6 +81,7 @@ async function search(intent) {
         entry.intent,
         entry.name,
         entry.domain,
+        entry.creator || "",
         ...(entry.tags || []),
         ...(entry.frameworks || []),
       ].join(" ");
@@ -115,7 +125,9 @@ async function list() {
 
 async function remove(slug) {
   const entries = await readIndex();
-  const filtered = entries.filter((e) => e.slug !== slug);
+  const filtered = entries.filter(
+    (e) => (e.compositeSlug || e.slug) !== slug && e.slug !== slug
+  );
   if (filtered.length === entries.length) {
     return false; // nothing removed
   }
@@ -123,4 +135,15 @@ async function remove(slug) {
   return true;
 }
 
-export { add, search, list, remove };
+async function listByCreator() {
+  const entries = await readIndex();
+  const groups = {};
+  for (const entry of entries) {
+    const key = entry.creatorSlug || "_ungrouped";
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(entry);
+  }
+  return groups;
+}
+
+export { add, search, list, listByCreator, remove, LIBRARY_DIR };
