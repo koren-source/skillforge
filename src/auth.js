@@ -1,194 +1,85 @@
-import process from "node:process";
+import { spawnSync } from "node:child_process";
 
 /**
- * Detects if a key looks like a Claude OAuth token vs standard API key
+ * Strip ANSI escape codes from CLI output
  */
-function isOAuthToken(key) {
-  // OAuth tokens: sk-ant-oat01-...
-  // Standard API keys: sk-ant-api03-...
-  return key && key.startsWith("sk-ant-oat01-");
+function stripAnsi(str) {
+  // eslint-disable-next-line no-control-regex
+  return str.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, "");
 }
 
 /**
- * Validates Anthropic API key format and attempts a lightweight API call
+ * Check if Claude CLI is installed and authenticated
+ * Runs a simple test prompt to verify everything works
  */
-async function validateAnthropicKey(key) {
-  if (!key) {
-    return { valid: false, error: "No key provided" };
-  }
-
-  if (isOAuthToken(key)) {
-    return {
-      valid: false,
-      error: "OAuth token detected",
-      isOAuthToken: true,
-      hint:
-        "You're using a Claude.ai OAuth token (sk-ant-oat01-...). " +
-        "SkillForge needs a standard API key (sk-ant-api03-...) from console.anthropic.com",
-    };
-  }
-
-  // Check format
-  if (!key.startsWith("sk-ant-")) {
-    return {
-      valid: false,
-      error: "Invalid key format",
-      hint: "Anthropic API keys should start with 'sk-ant-api03-'",
-    };
-  }
-
-  // Try a minimal API call to validate
-  try {
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": key,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model: "claude-3-haiku-20240307",
-        max_tokens: 1,
-        messages: [{ role: "user", content: "hi" }],
-      }),
-    });
-
-    if (response.ok) {
-      return { valid: true };
-    }
-
-    const body = await response.json().catch(() => ({}));
-    const errorType = body?.error?.type || "unknown";
-    const errorMsg = body?.error?.message || response.statusText;
-
-    if (response.status === 401) {
-      return {
-        valid: false,
-        error: "Authentication failed",
-        hint: `Invalid API key. Get a key from console.anthropic.com (${errorMsg})`,
-      };
-    }
-
-    if (response.status === 400 && errorMsg.includes("credit")) {
-      // Key is valid but no credits - that's still a valid key
-      return { valid: true, warning: "Key is valid but account may have no credits" };
-    }
-
-    return {
-      valid: false,
-      error: `API error: ${errorType}`,
-      hint: errorMsg,
-    };
-  } catch (err) {
-    return {
-      valid: false,
-      error: "Network error",
-      hint: `Could not reach Anthropic API: ${err.message}`,
-    };
-  }
-}
-
-/**
- * Validates OpenAI API key
- */
-async function validateOpenAIKey(key) {
-  if (!key) {
-    return { valid: false, error: "No key provided" };
-  }
-
-  if (!key.startsWith("sk-")) {
-    return {
-      valid: false,
-      error: "Invalid key format",
-      hint: "OpenAI API keys should start with 'sk-'",
-    };
-  }
-
-  try {
-    const response = await fetch("https://api.openai.com/v1/models", {
-      headers: {
-        Authorization: `Bearer ${key}`,
-      },
-    });
-
-    if (response.ok) {
-      return { valid: true };
-    }
-
-    const body = await response.json().catch(() => ({}));
-    const errorMsg = body?.error?.message || response.statusText;
-
-    if (response.status === 401) {
-      return {
-        valid: false,
-        error: "Authentication failed",
-        hint: `Invalid API key. Get a key from platform.openai.com (${errorMsg})`,
-      };
-    }
-
-    return {
-      valid: false,
-      error: `API error: ${response.status}`,
-      hint: errorMsg,
-    };
-  } catch (err) {
-    return {
-      valid: false,
-      error: "Network error",
-      hint: `Could not reach OpenAI API: ${err.message}`,
-    };
-  }
-}
-
-/**
- * Checks environment for valid API keys
- */
-async function checkAuth({ validate = false } = {}) {
-  const anthropicKey = process.env.ANTHROPIC_API_KEY;
-  const openaiKey = process.env.OPENAI_API_KEY;
-  const openaiBase = process.env.OPENAI_BASE_URL || process.env.OPENAI_API_BASE;
-
+function checkClaudeCliAuth({ validate = false } = {}) {
   const result = {
-    hasAnyKey: false,
-    anthropic: { set: false, valid: null, error: null, hint: null },
-    openai: { set: false, valid: null, error: null, hint: null },
-    proxy: { configured: !!openaiBase, baseUrl: openaiBase || null },
+    installed: false,
+    authenticated: false,
+    error: null,
+    hint: null,
   };
 
-  if (anthropicKey) {
-    result.anthropic.set = true;
-    result.hasAnyKey = true;
-
-    if (isOAuthToken(anthropicKey)) {
-      result.anthropic.valid = false;
-      result.anthropic.isOAuthToken = true;
-      result.anthropic.error = "OAuth token (not supported)";
-      result.anthropic.hint =
-        "Claude.ai OAuth tokens (sk-ant-oat01-...) don't work with the Anthropic API. " +
-        "Get a standard API key from console.anthropic.com";
-    } else if (validate) {
-      const validation = await validateAnthropicKey(anthropicKey);
-      result.anthropic.valid = validation.valid;
-      result.anthropic.error = validation.error;
-      result.anthropic.hint = validation.hint;
-      result.anthropic.warning = validation.warning;
-    }
+  // First check if claude CLI exists
+  const whichResult = spawnSync("which", ["claude"], { encoding: "utf8" });
+  if (whichResult.status !== 0) {
+    result.error = "Claude CLI not found";
+    result.hint = "Install from https://claude.ai/code then run: claude login";
+    return result;
   }
 
-  if (openaiKey) {
-    result.openai.set = true;
-    result.hasAnyKey = true;
+  result.installed = true;
 
-    if (validate && !openaiBase) {
-      const validation = await validateOpenAIKey(openaiKey);
-      result.openai.valid = validation.valid;
-      result.openai.error = validation.error;
-      result.openai.hint = validation.hint;
-    } else if (openaiBase) {
-      // Can't validate custom endpoints without knowing their API
-      result.openai.valid = null;
-      result.openai.hint = `Using custom endpoint: ${openaiBase}`;
+  if (!validate) {
+    // Without validate flag, we just check if claude exists
+    result.authenticated = null; // Unknown without testing
+    return result;
+  }
+
+  // Test authentication with a simple prompt
+  const testResult = spawnSync(
+    "claude",
+    ["-p", "respond with only the word READY", "--model", "claude-haiku-4-5"],
+    {
+      encoding: "utf8",
+      timeout: 30000, // 30 second timeout
     }
+  );
+
+  if (testResult.error) {
+    if (testResult.error.code === "ETIMEDOUT") {
+      result.error = "Timeout waiting for Claude CLI";
+      result.hint = "The request took too long. Check your network connection.";
+    } else {
+      result.error = `Claude CLI error: ${testResult.error.message}`;
+    }
+    return result;
+  }
+
+  if (testResult.status !== 0) {
+    const stderr = stripAnsi(testResult.stderr || "").trim();
+
+    if (stderr.includes("not logged in") || stderr.includes("login")) {
+      result.error = "Not authenticated";
+      result.hint = "Run: claude login";
+    } else if (stderr.includes("rate limit") || stderr.includes("quota")) {
+      // Rate limited but authenticated
+      result.authenticated = true;
+      result.error = "Rate limited";
+      result.hint = "You're authenticated but rate limited. Wait and try again.";
+    } else {
+      result.error = stderr || "Unknown authentication error";
+      result.hint = "Run: claude login";
+    }
+    return result;
+  }
+
+  const stdout = stripAnsi(testResult.stdout || "").trim();
+  if (stdout.includes("READY")) {
+    result.authenticated = true;
+  } else {
+    // Got output but not what we expected - still counts as working
+    result.authenticated = true;
   }
 
   return result;
@@ -200,42 +91,39 @@ async function checkAuth({ validate = false } = {}) {
 function getAuthErrorMessage(authResult) {
   const lines = [];
 
-  lines.push("SkillForge needs an AI API key to synthesize knowledge.");
+  lines.push("SkillForge requires the Claude CLI to synthesize knowledge.");
   lines.push("");
 
-  if (authResult.anthropic.isOAuthToken) {
-    lines.push("ISSUE: You're using a Claude.ai OAuth token (sk-ant-oat01-...)");
-    lines.push("These tokens are for claude.ai web access, NOT the Anthropic API.");
+  if (!authResult.installed) {
+    lines.push("ISSUE: Claude CLI not found");
     lines.push("");
+    lines.push("SETUP:");
+    lines.push("  1. Install Claude Code from https://claude.ai/code");
+    lines.push("  2. Run: claude login");
+    lines.push("  3. Verify: skillforge check-auth");
+  } else if (!authResult.authenticated) {
+    lines.push(`ISSUE: ${authResult.error || "Not authenticated"}`);
+    if (authResult.hint) {
+      lines.push("");
+      lines.push(`FIX: ${authResult.hint}`);
+    }
   }
-
-  lines.push("SETUP OPTIONS:");
-  lines.push("");
-  lines.push("  Option 1: Anthropic API Key (recommended)");
-  lines.push("    1. Go to console.anthropic.com");
-  lines.push("    2. Create an API key (starts with sk-ant-api03-)");
-  lines.push("    3. export ANTHROPIC_API_KEY=sk-ant-api03-...");
-  lines.push("");
-  lines.push("  Option 2: OpenAI API Key");
-  lines.push("    1. Go to platform.openai.com");
-  lines.push("    2. Create an API key");
-  lines.push("    3. export OPENAI_API_KEY=sk-...");
-  lines.push("    4. Use --model gpt-4o-mini (or another OpenAI model)");
-  lines.push("");
-  lines.push("  Option 3: OpenAI-compatible proxy (LiteLLM, Ollama, etc.)");
-  lines.push("    1. Set OPENAI_BASE_URL to your proxy endpoint");
-  lines.push("    2. Set OPENAI_API_KEY (even if just a placeholder)");
-  lines.push("    3. Use --model with your proxy's model name");
-  lines.push("");
-  lines.push("Run `skillforge check-auth` to verify your setup.");
 
   return lines.join("\n");
 }
 
+// Legacy exports for backward compatibility (no-ops)
+function isOAuthToken() {
+  return false;
+}
+
+async function checkAuth(options = {}) {
+  return checkClaudeCliAuth(options);
+}
+
 export {
   isOAuthToken,
-  validateAnthropicKey,
-  validateOpenAIKey,
   checkAuth,
+  checkClaudeCliAuth,
   getAuthErrorMessage,
 };

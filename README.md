@@ -41,66 +41,22 @@ npm install -g skillforge
 You also need:
 
 - `yt-dlp` installed and available on your `PATH`
-- An API key (see setup below)
+- Claude CLI installed and authenticated
 
-## API Keys Setup
+## Setup
 
-SkillForge needs an AI API key to synthesize knowledge from transcripts. You bring your own keys.
-
-### Option 1: Anthropic API Key (Claude models)
-
-1. Go to [console.anthropic.com](https://console.anthropic.com)
-2. Create an API key (starts with `sk-ant-api03-`)
-3. Set it in your environment:
+SkillForge uses your Claude CLI authentication. No API keys required.
 
 ```bash
-export ANTHROPIC_API_KEY=sk-ant-api03-...
+# 1. Install Claude Code from https://claude.ai/code
+# 2. Authenticate once:
+claude login
+
+# 3. Verify setup:
+skillforge check-auth --validate
 ```
 
-Then use Claude models:
-```bash
-skillforge build --topic "meta ads" --model claude-sonnet-4-20250514
-```
-
-**Important:** Claude.ai OAuth tokens (`sk-ant-oat01-...`) do NOT work. Those are user-level web tokens, not API keys. You need a key from console.anthropic.com.
-
-### Option 2: OpenAI API Key
-
-1. Go to [platform.openai.com](https://platform.openai.com)
-2. Create an API key
-3. Set it in your environment:
-
-```bash
-export OPENAI_API_KEY=sk-...
-```
-
-Then use OpenAI models:
-```bash
-skillforge build --topic "meta ads" --model gpt-4o-mini
-```
-
-### Option 3: OpenAI-Compatible Proxy (LiteLLM, Ollama, etc.)
-
-If you're running a local proxy or gateway:
-
-```bash
-export OPENAI_BASE_URL=http://localhost:8000/v1
-export OPENAI_API_KEY=dummy  # Some proxies require this even if unused
-```
-
-Then use your proxy's model names:
-```bash
-skillforge build --topic "meta ads" --model my-local-model
-```
-
-### Verify Your Setup
-
-Run the auth check command to verify your configuration:
-
-```bash
-skillforge check-auth
-skillforge check-auth --validate  # Actually test the keys against APIs
-```
+That's it. SkillForge will use your Claude CLI session for all AI synthesis.
 
 ## Usage
 
@@ -286,16 +242,16 @@ To contribute a community skill:
 
 ### Authentication Errors
 
-If you see `401 authentication_error`, run:
+If you see authentication errors, run:
 
 ```bash
 skillforge check-auth --validate
 ```
 
 Common issues:
-- **OAuth token instead of API key**: Claude.ai tokens (`sk-ant-oat01-...`) don't work with the API. Get a key from [console.anthropic.com](https://console.anthropic.com).
-- **Expired or invalid key**: Regenerate your key from the console.
-- **No credits**: Check your account balance at the respective console.
+- **Claude CLI not installed**: Install from https://claude.ai/code
+- **Not logged in**: Run `claude login` to authenticate
+- **Rate limited**: Wait a few minutes and try again
 
 ### yt-dlp Issues
 

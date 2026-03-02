@@ -1,13 +1,12 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
-import process from "node:process";
-import Anthropic from "@anthropic-ai/sdk";
+import { spawnSync } from "node:child_process";
 import * as skillIndex from "./skillIndex.js";
 import { slugify, slugifyCreator } from "./format.js";
-import { isOAuthToken, getAuthErrorMessage, checkAuth } from "./auth.js";
 
 const CHECKPOINT_DIR = path.join(os.homedir(), ".skillforge", "checkpoints");
+const DEFAULT_MODEL = "claude-sonnet-4-20250514";
 
 async function ensureCheckpointDir() {
   await fs.mkdir(CHECKPOINT_DIR, { recursive: true });
@@ -42,8 +41,43 @@ async function removeCheckpoint(slug) {
   }
 }
 
-const ANTHROPIC_MODEL_PREFIXES = ["claude"];
-const OPENAI_MODEL_PREFIXES = ["gpt", "o1", "o3", "o4"];
+/**
+ * Strip ANSI escape codes from CLI output
+ */
+function stripAnsi(str) {
+  // eslint-disable-next-line no-control-regex
+  return str.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, "");
+}
+
+/**
+ * Call Claude CLI in non-interactive mode
+ * Uses the user's existing claude CLI authentication (no API keys needed)
+ */
+function callClaudeCli(prompt, model = DEFAULT_MODEL) {
+  const result = spawnSync("claude", ["-p", prompt, "--model", model], {
+    encoding: "utf8",
+    maxBuffer: 50 * 1024 * 1024, // 50MB buffer for large outputs
+    timeout: 5 * 60 * 1000, // 5 minute timeout
+  });
+
+  if (result.error) {
+    if (result.error.code === "ENOENT") {
+      throw new Error(
+        "SkillForge requires the Claude CLI.\n\n" +
+        "Install from https://claude.ai/code then run:\n" +
+        "  claude login"
+      );
+    }
+    throw new Error(`Claude CLI error: ${result.error.message}`);
+  }
+
+  if (result.status !== 0) {
+    const stderr = stripAnsi(result.stderr || "").trim();
+    throw new Error(`Claude CLI failed (exit ${result.status}): ${stderr || "Unknown error"}`);
+  }
+
+  return stripAnsi(result.stdout || "").trim();
+}
 
 function chunkText(text, maxLength) {
   if (text.length <= maxLength) {
@@ -184,141 +218,18 @@ function normalizeSynthesis(result, transcripts, creatorMeta) {
   return normalized;
 }
 
-function inferProvider(model) {
-  const normalized = String(model || "").toLowerCase();
-
-  if (ANTHROPIC_MODEL_PREFIXES.some((prefix) => normalized.startsWith(prefix))) {
-    return "anthropic";
-  }
-
-  if (OPENAI_MODEL_PREFIXES.some((prefix) => normalized.startsWith(prefix))) {
-    return "openai";
-  }
-
-  return process.env.ANTHROPIC_API_KEY ? "anthropic" : "openai";
+/**
+ * Call Claude CLI and parse JSON response
+ */
+async function callProvider(prompt, model = DEFAULT_MODEL) {
+  const output = callClaudeCli(prompt, model);
+  return JSON.parse(extractJson(output));
 }
 
-async function synthesizeWithAnthropic(prompt, model) {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-
-  if (!apiKey) {
-    const auth = await checkAuth();
-    throw new Error(
-      "Missing ANTHROPIC_API_KEY.\n\n" + getAuthErrorMessage(auth)
-    );
-  }
-
-  // Check for OAuth tokens before making the API call
-  if (isOAuthToken(apiKey)) {
-    const auth = await checkAuth();
-    throw new Error(
-      "Invalid ANTHROPIC_API_KEY: OAuth token detected.\n\n" + getAuthErrorMessage(auth)
-    );
-  }
-
-  const client = new Anthropic({
-    apiKey,
-  });
-
-  try {
-    const response = await client.messages.create({
-      model,
-      max_tokens: 4096,
-      temperature: 0.2,
-      messages: [
-        {
-          role: "user",
-          content: prompt,
-        },
-      ],
-    });
-
-    const text = response.content
-      .filter((block) => block.type === "text")
-      .map((block) => block.text)
-      .join("\n");
-
-    return JSON.parse(extractJson(text));
-  } catch (err) {
-    // Catch auth errors and provide helpful messages
-    if (err.status === 401 || err.message?.includes("authentication")) {
-      const auth = await checkAuth();
-      throw new Error(
-        `Anthropic API authentication failed: ${err.message}\n\n` + getAuthErrorMessage(auth)
-      );
-    }
-    throw err;
-  }
-}
-
-async function synthesizeWithOpenAI(prompt, model) {
-  const apiKey = process.env.OPENAI_API_KEY;
-
-  if (!apiKey) {
-    const auth = await checkAuth();
-    throw new Error(
-      "Missing OPENAI_API_KEY.\n\n" + getAuthErrorMessage(auth)
-    );
-  }
-
-  // Support custom OpenAI-compatible endpoints (LiteLLM, Ollama, etc.)
-  const baseUrl = process.env.OPENAI_BASE_URL || process.env.OPENAI_API_BASE || "https://api.openai.com/v1";
-
-  const response = await fetch(`${baseUrl}/chat/completions`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model,
-      temperature: 0.2,
-      response_format: { type: "json_object" },
-      messages: [
-        {
-          role: "system",
-          content: "Return valid JSON only.",
-        },
-        {
-          role: "user",
-          content: prompt,
-        },
-      ],
-    }),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-
-    // Provide helpful error for auth failures
-    if (response.status === 401) {
-      const auth = await checkAuth();
-      throw new Error(
-        `OpenAI API authentication failed: ${errorText}\n\n` + getAuthErrorMessage(auth)
-      );
-    }
-
-    throw new Error(`OpenAI API request failed: ${response.status} ${errorText}`);
-  }
-
-  const payload = await response.json();
-  const text = payload.choices?.[0]?.message?.content;
-  if (!text) {
-    throw new Error("OpenAI API returned an empty response.");
-  }
-
-  return JSON.parse(extractJson(text));
-}
-
-async function callProvider(prompt, model) {
-  const provider = inferProvider(model);
-  if (provider === "anthropic") {
-    return synthesizeWithAnthropic(prompt, model);
-  }
-  return synthesizeWithOpenAI(prompt, model);
-}
-
-async function callProviderRaw(prompt, model = "gpt-4o-mini") {
+/**
+ * Call Claude CLI (alias for backward compatibility)
+ */
+async function callProviderRaw(prompt, model = DEFAULT_MODEL) {
   return callProvider(prompt, model);
 }
 
@@ -327,6 +238,7 @@ async function synthesizeKnowledge({ transcripts, topic, model, intent, outputPa
     throw new Error("At least one transcript is required for synthesis.");
   }
 
+  const effectiveModel = model || DEFAULT_MODEL;
   const slug = slugify(topic || "skillforge");
 
   // Check for checkpoint
@@ -392,7 +304,7 @@ async function synthesizeKnowledge({ transcripts, topic, model, intent, outputPa
           { ...bigTranscript, transcript: textChunks[i] },
         ];
         const prompt = buildPrompt({ topic, transcripts: chunkTranscripts });
-        const chunkResult = await callProvider(prompt, model);
+        const chunkResult = await callProvider(prompt, effectiveModel);
         summaries.push(chunkResult);
         await saveCheckpoint(slug, { phase: "chunk", index: i, partial: summaries });
       }
@@ -404,13 +316,13 @@ async function synthesizeKnowledge({ transcripts, topic, model, intent, outputPa
         transcript: JSON.stringify(s),
       }));
       const mergePrompt = buildPrompt({ topic, transcripts: mergedTranscripts });
-      result = await callProvider(mergePrompt, model);
+      result = await callProvider(mergePrompt, effectiveModel);
     } else {
       // Multiple chunks of transcripts
       const summaries = [];
       for (let i = 0; i < chunks.length; i++) {
         const prompt = buildPrompt({ topic, transcripts: chunks[i] });
-        const chunkResult = await callProvider(prompt, model);
+        const chunkResult = await callProvider(prompt, effectiveModel);
         summaries.push(chunkResult);
         await saveCheckpoint(slug, { phase: "chunk", index: i, partial: summaries });
       }
@@ -421,11 +333,11 @@ async function synthesizeKnowledge({ transcripts, topic, model, intent, outputPa
         transcript: JSON.stringify(s),
       }));
       const mergePrompt = buildPrompt({ topic, transcripts: mergedTranscripts });
-      result = await callProvider(mergePrompt, model);
+      result = await callProvider(mergePrompt, effectiveModel);
     }
   } else {
     const prompt = buildPrompt({ topic, transcripts });
-    result = await callProvider(prompt, model);
+    result = await callProvider(prompt, effectiveModel);
   }
 
   // Save checkpoint before normalization
@@ -460,7 +372,7 @@ async function synthesizeKnowledge({ transcripts, topic, model, intent, outputPa
   return normalized;
 }
 
-async function previewTranscript({ transcript, topic, model = "gpt-4o-mini" }) {
+async function previewTranscript({ transcript, topic, model = DEFAULT_MODEL }) {
   const truncated = chunkText(transcript, 12000)[0];
   const prompt = `
 You are previewing a YouTube video transcript to help a user decide if it's worth extracting into an agent skill.

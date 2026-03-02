@@ -290,80 +290,59 @@ trust
 // ── check-auth ────────────────────────────────────────────────────────
 program
   .command("check-auth")
-  .description("Verify API key configuration")
-  .option("--validate", "Test keys against live APIs")
+  .description("Verify Claude CLI is installed and authenticated")
+  .option("--validate", "Test authentication with a live API call")
   .action(
     withErrorHandler(async (options) => {
-      const spinner = ora({ text: "Checking API configuration", color: "cyan" }).start();
+      const spinner = ora({ text: "Checking Claude CLI", color: "cyan" }).start();
 
       const auth = await checkAuth({ validate: options.validate });
 
       spinner.stop();
 
-      process.stdout.write(chalk.bold("SkillForge API Configuration\n\n"));
+      process.stdout.write(chalk.bold("SkillForge Authentication\n\n"));
 
-      // Anthropic
-      process.stdout.write(chalk.bold("Anthropic:\n"));
-      if (!auth.anthropic.set) {
-        process.stdout.write(`  ${chalk.dim("ANTHROPIC_API_KEY:")} ${chalk.yellow("not set")}\n`);
-      } else if (auth.anthropic.isOAuthToken) {
-        process.stdout.write(`  ${chalk.dim("ANTHROPIC_API_KEY:")} ${chalk.red("OAuth token (not supported)")}\n`);
-        process.stdout.write(`  ${chalk.yellow(auth.anthropic.hint)}\n`);
-      } else if (auth.anthropic.valid === true) {
-        process.stdout.write(`  ${chalk.dim("ANTHROPIC_API_KEY:")} ${chalk.green("valid")}\n`);
-        if (auth.anthropic.warning) {
-          process.stdout.write(`  ${chalk.yellow(auth.anthropic.warning)}\n`);
-        }
-      } else if (auth.anthropic.valid === false) {
-        process.stdout.write(`  ${chalk.dim("ANTHROPIC_API_KEY:")} ${chalk.red(auth.anthropic.error)}\n`);
-        if (auth.anthropic.hint) {
-          process.stdout.write(`  ${chalk.yellow(auth.anthropic.hint)}\n`);
-        }
-      } else {
-        process.stdout.write(`  ${chalk.dim("ANTHROPIC_API_KEY:")} ${chalk.cyan("set (use --validate to test)")}\n`);
-      }
+      // Claude CLI status
+      process.stdout.write(chalk.bold("Claude CLI:\n"));
 
-      process.stdout.write("\n");
-
-      // OpenAI
-      process.stdout.write(chalk.bold("OpenAI:\n"));
-      if (!auth.openai.set) {
-        process.stdout.write(`  ${chalk.dim("OPENAI_API_KEY:")} ${chalk.yellow("not set")}\n`);
-      } else if (auth.openai.valid === true) {
-        process.stdout.write(`  ${chalk.dim("OPENAI_API_KEY:")} ${chalk.green("valid")}\n`);
-      } else if (auth.openai.valid === false) {
-        process.stdout.write(`  ${chalk.dim("OPENAI_API_KEY:")} ${chalk.red(auth.openai.error)}\n`);
-        if (auth.openai.hint) {
-          process.stdout.write(`  ${chalk.yellow(auth.openai.hint)}\n`);
-        }
-      } else {
-        process.stdout.write(`  ${chalk.dim("OPENAI_API_KEY:")} ${chalk.cyan("set (use --validate to test)")}\n`);
-      }
-
-      if (auth.proxy.configured) {
-        process.stdout.write(`  ${chalk.dim("Custom endpoint:")} ${auth.proxy.baseUrl}\n`);
-      }
-
-      process.stdout.write("\n");
-
-      // Summary
-      if (!auth.hasAnyKey) {
-        process.stdout.write(chalk.red("No API keys configured.\n\n"));
+      if (!auth.installed) {
+        process.stdout.write(`  ${chalk.dim("Status:")} ${chalk.red("not installed")}\n`);
+        process.stdout.write(`  ${chalk.yellow(auth.hint)}\n`);
+        process.stdout.write("\n");
+        process.stdout.write(chalk.red("Claude CLI required.\n\n"));
         process.stdout.write(getAuthErrorMessage(auth));
         process.stdout.write("\n");
         process.exitCode = 1;
-      } else if (auth.anthropic.isOAuthToken && !auth.openai.set) {
-        process.stdout.write(chalk.red("No valid API keys configured.\n\n"));
+        return;
+      }
+
+      process.stdout.write(`  ${chalk.dim("Installed:")} ${chalk.green("yes")}\n`);
+
+      if (auth.authenticated === null && !options.validate) {
+        process.stdout.write(`  ${chalk.dim("Authenticated:")} ${chalk.cyan("use --validate to test")}\n`);
+        process.stdout.write("\n");
+        process.stdout.write(chalk.green("Claude CLI found. Run with --validate to test authentication.\n"));
+        return;
+      }
+
+      if (auth.authenticated) {
+        process.stdout.write(`  ${chalk.dim("Authenticated:")} ${chalk.green("yes")}\n`);
+        process.stdout.write("\n");
+        process.stdout.write(chalk.green("Claude CLI authenticated and working.\n"));
+        process.stdout.write(chalk.dim("Default model: claude-sonnet-4-20250514\n"));
+      } else {
+        process.stdout.write(`  ${chalk.dim("Authenticated:")} ${chalk.red("no")}\n`);
+        if (auth.error) {
+          process.stdout.write(`  ${chalk.dim("Error:")} ${chalk.red(auth.error)}\n`);
+        }
+        if (auth.hint) {
+          process.stdout.write(`  ${chalk.yellow(auth.hint)}\n`);
+        }
+        process.stdout.write("\n");
+        process.stdout.write(chalk.red("Authentication required.\n\n"));
         process.stdout.write(getAuthErrorMessage(auth));
         process.stdout.write("\n");
         process.exitCode = 1;
-      } else {
-        process.stdout.write(chalk.green("Ready to synthesize knowledge.\n"));
-        if (auth.openai.set && !auth.anthropic.set) {
-          process.stdout.write(chalk.dim("Using OpenAI. Default model: gpt-4o-mini\n"));
-        } else if (auth.anthropic.set && !auth.anthropic.isOAuthToken) {
-          process.stdout.write(chalk.dim("Using Anthropic. Default model: gpt-4o-mini (or use --model claude-*)\n"));
-        }
       }
     })
   );
@@ -563,7 +542,7 @@ program
   .option(
     "--model <model>",
     "AI model to use",
-    "gpt-4o-mini"
+    "claude-sonnet-4-20250514"
   )
   .action(
     withErrorHandler(async (url, options) => {
@@ -803,7 +782,7 @@ program
   .command("watch <url>")
   .description("Preview a video's content before building a skill")
   .option("--skill <topic>", "Topic slug for the skill (enables creator-scoped library path)")
-  .option("--model <model>", "AI model to use", "gpt-4o-mini")
+  .option("--model <model>", "AI model to use", "claude-sonnet-4-20250514")
   .option("--output <path>", "Where to save the generated output", "./output")
   .option("--format <format>", "Output format: skill, markdown, or json", "skill")
   .option("--intent <intent>", "Intent string for skill indexing")
