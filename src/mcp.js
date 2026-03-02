@@ -74,10 +74,40 @@ function indexSkill(db, creator, topic, slug, content) {
 
 async function rebuildIndex(db) {
   const allSkills = await listAll();
-  const insert = db.transaction((skills) => {
-    db.exec("DELETE FROM skills");
-    db.exec("DELETE FROM skills_fts");
+
+  // Get existing indexed_at timestamps to skip unchanged files
+  const existing = new Map();
+  try {
+    const rows = db.prepare("SELECT creator, topic, indexed_at FROM skills").all();
+    for (const row of rows) {
+      existing.set(`${row.creator}/${row.topic}`, row.indexed_at);
+    }
+  } catch {
+    // Table may be empty on first run
+  }
+
+  // Track which skills still exist on disk (for pruning deleted ones)
+  const currentKeys = new Set();
+  let updated = 0;
+
+  const upsert = db.transaction((skills) => {
     for (const skill of skills) {
+      const key = `${skill.creator}/${skill.topic}`;
+      currentKeys.add(key);
+
+      // Check file modification time against last indexed time
+      let stat;
+      try {
+        stat = fs.statSync(skill.path);
+      } catch {
+        continue;
+      }
+
+      const lastIndexed = existing.get(key);
+      if (lastIndexed && new Date(lastIndexed).getTime() >= stat.mtimeMs) {
+        continue; // File hasn't changed since last index
+      }
+
       let content = "";
       try {
         content = fs.readFileSync(skill.path, "utf8");
@@ -85,9 +115,22 @@ async function rebuildIndex(db) {
         continue;
       }
       indexSkill(db, skill.creator, skill.topic, skill.topic, content);
+      updated++;
+    }
+
+    // Remove skills that no longer exist on disk
+    for (const key of existing.keys()) {
+      if (!currentKeys.has(key)) {
+        const [creator, topic] = key.split("/");
+        db.prepare("DELETE FROM skills WHERE creator = ? AND topic = ?").run(creator, topic);
+      }
     }
   });
-  insert(allSkills);
+
+  upsert(allSkills);
+  if (updated > 0) {
+    process.stderr.write(`[skillforge] Updated ${updated} skill(s) in index\n`);
+  }
   return allSkills.length;
 }
 

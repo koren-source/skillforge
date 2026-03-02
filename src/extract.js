@@ -173,17 +173,18 @@ function extractVideoId(url) {
 async function fetchTranscriptForUrl(url) {
   const videoId = extractVideoId(url);
 
-  // Check cache first
-  if (videoId && (await cache.has(videoId))) {
-    const transcript = await cache.get(videoId);
-    const metadata = await fetchVideoMetadata(url);
-    return {
-      url,
-      title: metadata.title || url,
-      channelTitle: metadata.channel || metadata.uploader || null,
-      channelUrl: metadata.channel_url || metadata.uploader_url || null,
-      transcript,
-    };
+  // Check cache first — includes metadata so no network call needed
+  if (videoId) {
+    const cached = await cache.get(videoId);
+    if (cached) {
+      return {
+        url,
+        title: cached.title || url,
+        channelTitle: cached.channelTitle || null,
+        channelUrl: cached.channelUrl || null,
+        transcript: cached.transcript,
+      };
+    }
   }
 
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "skillforge-"));
@@ -222,9 +223,14 @@ async function fetchTranscriptForUrl(url) {
       console.warn(`[SkillForge] Warning: using auto-generated captions for: ${metadata.title || url}`);
     }
 
-    // Save to cache
+    // Save to cache (with metadata to avoid future network calls)
     if (videoId) {
-      await cache.set(videoId, transcript);
+      await cache.set(videoId, {
+        transcript,
+        title: metadata.title || url,
+        channelTitle: metadata.channel || metadata.uploader || null,
+        channelUrl: metadata.channel_url || metadata.uploader_url || null,
+      });
     }
 
     return {
@@ -292,9 +298,20 @@ async function extractFromUrls(urls, options = {}) {
 
       results.push(transcriptData);
     } catch (error) {
-      process.stderr.write(
-        `[skillforge] Warning: skipped ${url} due to extraction error: ${error.message}\n`
-      );
+      const msg = String(error.message || "");
+      if (msg.includes("429") || msg.toLowerCase().includes("too many requests") || msg.toLowerCase().includes("rate limit")) {
+        // Rate limit — re-throw so outer retry logic can handle it
+        throw error;
+      }
+      if (msg.toLowerCase().includes("private") || msg.toLowerCase().includes("unavailable")) {
+        process.stderr.write(
+          `[skillforge] Warning: skipped ${url} — video unavailable or private.\n`
+        );
+      } else {
+        process.stderr.write(
+          `[skillforge] Warning: skipped ${url} due to extraction error: ${msg}\n`
+        );
+      }
     }
   }
 
@@ -303,6 +320,7 @@ async function extractFromUrls(urls, options = {}) {
 
 export {
   extractFromUrls,
+  extractVideoId,
   fetchTranscriptForUrl,
   inspectUrl,
   listChannelVideoUrls,

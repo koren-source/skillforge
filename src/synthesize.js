@@ -42,6 +42,25 @@ async function removeCheckpoint(slug) {
   }
 }
 
+const CHECKPOINT_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+async function cleanupOldCheckpoints() {
+  try {
+    const files = await fs.readdir(CHECKPOINT_DIR);
+    const now = Date.now();
+    for (const file of files) {
+      if (!file.endsWith(".json")) continue;
+      const filePath = path.join(CHECKPOINT_DIR, file);
+      const stat = await fs.stat(filePath);
+      if (now - stat.mtimeMs > CHECKPOINT_TTL_MS) {
+        await fs.unlink(filePath);
+      }
+    }
+  } catch {
+    // Directory may not exist yet — that's fine
+  }
+}
+
 /**
  * Strip ANSI escape codes from CLI output
  */
@@ -452,6 +471,9 @@ async function synthesizeKnowledge({ transcripts, topic, model, intent, outputPa
   if (!Array.isArray(transcripts) || transcripts.length === 0) {
     throw new Error("At least one transcript is required for synthesis.");
   }
+
+  // Clean up abandoned checkpoints older than 7 days
+  await cleanupOldCheckpoints();
 
   const effectiveModel = model || DEFAULT_MODEL;
   const slug = slugify(topic || "skillforge");

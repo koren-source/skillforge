@@ -135,6 +135,13 @@ Remove a skill from the index.
 skillforge prune --skill cold-email-outreach
 ```
 
+### `skillforge merge --a <creator/topic> --b <creator/topic>`
+Merge two existing skills into one unified, deduplicated skill.
+
+```bash
+skillforge merge --a @alex-hormozi/pricing --b @leila-hormozi/pricing --output-creator @hormozi --output-topic pricing
+```
+
 ### `skillforge serve`
 Start the SkillForge MCP server for Claude Code integration (stdio transport).
 

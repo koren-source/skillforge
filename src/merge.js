@@ -24,7 +24,7 @@ Return strict JSON only with this exact schema:
     { "name": "string", "description": "string", "steps": ["string"], "source_titles": ["string"] }
   ],
   "tactics": [
-    { "title": "string", "details": "string", "when_to_use": "string", "source_titles": ["string"] }
+    { "name": "string", "description": "string", "when_to_use": "string", "source_titles": ["string"] }
   ],
   "quotes": [
     { "quote": "string", "speaker": "string", "context": "string", "source_title": "string" }

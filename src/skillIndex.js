@@ -1,5 +1,4 @@
 import fs from "node:fs/promises";
-import { readFileSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
 
@@ -74,8 +73,8 @@ async function search(intent) {
   const intentTokens = tokenize(intent);
   if (intentTokens.length === 0) return entries;
 
-  return entries
-    .map((entry) => {
+  const scored = await Promise.all(
+    entries.map(async (entry) => {
       // Build haystack from index fields + optionally the SKILL.md content
       const indexText = [
         entry.intent,
@@ -89,7 +88,7 @@ async function search(intent) {
       let skillContent = "";
       if (entry.filePath) {
         try {
-          skillContent = readFileSync(entry.filePath, "utf8").slice(0, 3000);
+          skillContent = (await fs.readFile(entry.filePath, "utf8")).slice(0, 3000);
         } catch { /* file missing, skip */ }
       }
 
@@ -115,6 +114,9 @@ async function search(intent) {
 
       return { ...entry, relevance: matches / intentTokens.length };
     })
+  );
+
+  return scored
     .filter((e) => e.relevance > 0)
     .sort((a, b) => b.relevance - a.relevance);
 }

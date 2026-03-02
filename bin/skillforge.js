@@ -958,6 +958,42 @@ program
     })
   );
 
+// ── merge ─────────────────────────────────────────────────────────────
+program
+  .command("merge")
+  .description("Merge two existing skills into one unified skill")
+  .requiredOption("--a <creator/topic>", "First skill (creator/topic)")
+  .requiredOption("--b <creator/topic>", "Second skill (creator/topic)")
+  .option("--output-creator <creator>", "Creator slug for merged output", "merged")
+  .option("--output-topic <topic>", "Topic slug for merged output")
+  .option("--model <model>", "Claude model to use")
+  .action(
+    withErrorHandler(async (options) => {
+      const { mergeAndSave } = await import("../src/merge.js");
+
+      function parseSkillRef(ref) {
+        const parts = ref.split("/");
+        if (parts.length !== 2) throw new Error(`Invalid skill ref "${ref}" — expected "creator/topic"`);
+        return { creator: parts[0], topic: parts[1] };
+      }
+
+      const a = parseSkillRef(options.a);
+      const b = parseSkillRef(options.b);
+
+      const spinner = ora(`Merging ${options.a} + ${options.b}...`).start();
+      const { filePath } = await mergeAndSave({
+        creatorA: a.creator,
+        topicA: a.topic,
+        creatorB: b.creator,
+        topicB: b.topic,
+        outputCreator: options.outputCreator,
+        outputTopic: options.outputTopic,
+        model: options.model,
+      });
+      spinner.succeed(`Merged skill saved to ${filePath}`);
+    })
+  );
+
 // ── serve ─────────────────────────────────────────────────────────────
 program
   .command("serve")

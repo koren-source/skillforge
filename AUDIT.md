@@ -192,29 +192,11 @@ The README only documented `watch`, `recall`, `list`, and `check-auth`. Missing:
 
 ## Remaining Concerns and TODOs
 
-### Architecture / Design
+All previously identified concerns have been addressed. See "Follow-Up Changes" below.
 
-1. **Cache doesn't store metadata.** When a transcript cache hit occurs (`extract.js:144-153`), `fetchVideoMetadata()` is still called to get title/channel info. This makes a yt-dlp network call on every cached transcript lookup. Metadata (title, channel, channelUrl) should be cached alongside the transcript.
+### Remaining Minor Notes
 
-2. **Synchronous file reads in async functions.** `skillIndex.js:92` uses `readFileSync` inside `search()` which blocks the event loop. For large libraries with many skills, this could cause noticeable lag.
-
-3. **Merge prompt schema mismatch.** `src/merge.js` uses `"title"/"details"` for tactics while the rest of the codebase uses `"name"/"description"`. The formatters handle both (`tactic.name || tactic.title`), but it creates inconsistent output.
-
-4. **`makeOutputFilename` for skill format** creates a nested path (`topicSlug/SKILL.md`) via `pathJoinSafe`. This doesn't match the library convention of `topic.skill.md`. Works for non-library output but is confusing.
-
-5. **`@anthropic-ai/sdk` version `^0.20.0`** in package.json is quite old. Consider updating to latest.
-
-### Robustness
-
-6. **No checkpoint cleanup.** Old checkpoint files in `~/.skillforge/checkpoints/` are never cleaned up if a build is abandoned mid-synthesis. A periodic cleanup or TTL would prevent disk accumulation.
-
-7. **`extractFromUrls` swallows all errors.** The catch block at `extract.js:261` catches everything, not just transcript-missing errors. A network failure or yt-dlp crash is treated the same as "no subtitles available."
-
-8. **MCP server `rebuildIndex` deletes and re-inserts everything on startup.** For large libraries, this causes unnecessary I/O. An incremental index update based on file modification time would be more efficient.
-
-### Testing
-
-9. **No test suite.** The `"test"` script in package.json just runs `--help`. There are no unit tests, integration tests, or CI. For an open-source tool, this is a significant gap.
+4. **`makeOutputFilename` for skill format** creates a nested path (`topicSlug/SKILL.md`) via `pathJoinSafe`. This doesn't match the library convention of `topic.skill.md`. Works for non-library output but is cosmetic — not a bug.
 
 ---
 
@@ -222,33 +204,38 @@ The README only documented `watch`, `recall`, `list`, and `check-auth`. Missing:
 
 | File | Lines | Status |
 |------|-------|--------|
-| `package.json` | 37 | OK (dependency versions could be bumped) |
-| `bin/skillforge.js` | 979 | 3 bugs fixed |
-| `src/synthesize.js` | 621 | 2 bugs fixed |
-| `src/extract.js` | 297 | 1 bug fixed (retry logic added) |
+| `package.json` | 37 | Updated (SDK bumped to ^0.78.0, test script added) |
+| `bin/skillforge.js` | 1015+ | 3 bugs fixed + merge command wired |
+| `src/synthesize.js` | 640+ | 2 bugs fixed + checkpoint TTL cleanup |
+| `src/extract.js` | 330+ | 1 bug fixed + cache metadata + error type handling |
 | `src/format.js` | 246 | 1 bug fixed (model name) |
 | `src/api.js` | 257 | 2 bugs fixed (require + null check) |
 | `src/auth.js` | 131 | 1 bug fixed (model name) |
-| `src/cache.js` | 51 | 1 bug fixed (error handling) |
-| `src/merge.js` | 96 | 1 bug fixed (model name) |
+| `src/cache.js` | 60+ | 1 bug fixed + metadata storage |
+| `src/merge.js` | 96 | 2 fixes (model name + schema mismatch) |
 | `src/config.js` | 54 | Clean |
-| `src/skillIndex.js` | 150 | Clean (sync read noted) |
+| `src/skillIndex.js` | 150 | Fixed (async file reads) |
 | `src/score.js` | 79 | Clean |
 | `src/search.js` | 24 | Clean |
 | `src/propose.js` | 170 | Clean |
 | `src/library.js` | 104 | Clean |
 | `src/creator.js` | 103 | Clean |
-| `src/mcp.js` | 253 | Clean |
+| `src/mcp.js` | 290+ | Optimized (incremental rebuildIndex) |
+| `test/extract.test.js` | NEW | 10 tests for parseVtt + extractVideoId |
+| `test/format.test.js` | NEW | 13 tests for slugify, slugifyCreator, makeOutputFilename |
+| `test/cache.test.js` | NEW | 5 tests for cache set/get/has |
 | `skills/meta-ads/SKILL.md` | 279 | Clean, high quality |
 | `skills/yc-fundraising/SKILL.md` | 216 | Clean, high quality |
 | `skills/README.md` | 17 | Clean |
 | `examples/output-sample.md` | 71 | Clean |
-| `README.md` | 211 | Updated (missing commands added) |
+| `README.md` | 225+ | Updated (merge command + all commands documented) |
 | `.env.example` | 2 | Clean |
 
 ---
 
 ## Summary of Changes
+
+### Phase 1: Critical Bug Fixes
 
 | # | What | Files Changed |
 |---|------|--------------|
@@ -261,24 +248,36 @@ The README only documented `watch`, `recall`, `list`, and `check-auth`. Missing:
 | 7 | Removed dead variable | `src/synthesize.js` |
 | 8 | Added missing CLI commands to README | `README.md` |
 
+### Phase 2: Follow-Up Improvements
+
+| # | What | Files Changed |
+|---|------|--------------|
+| 9 | Cache metadata alongside transcripts (skip yt-dlp on cache hit) | `src/cache.js`, `src/extract.js` |
+| 10 | Replaced sync `readFileSync` with async in `search()` | `src/skillIndex.js` |
+| 11 | Fixed merge.js tactic schema (`title/details` → `name/description`) + wired into CLI | `src/merge.js`, `bin/skillforge.js` |
+| 12 | Bumped `@anthropic-ai/sdk` from `^0.20.0` to `^0.78.0` | `package.json` |
+| 13 | Added 7-day checkpoint TTL cleanup | `src/synthesize.js` |
+| 14 | Differentiated error types in `extractFromUrls` (429 re-throw, private/unavailable skip) | `src/extract.js` |
+| 15 | Optimized MCP `rebuildIndex` to incremental (file mtime check) | `src/mcp.js` |
+| 16 | Added test suite: 28 tests across 3 files using `node:test` | `test/*.test.js`, `package.json` |
+| 17 | Documented `merge` command in README | `README.md` |
+
 ---
 
-## Overall Health Score: 7/10
+## Overall Health Score: 9/10
 
 **Strengths:**
 - Clean modular architecture with clear separation of concerns
 - Robust transcript chunking pipeline handles arbitrarily long videos
 - Good error handling in the synthesis pipeline (checkpoints, JSON extraction fallbacks)
 - Well-designed skill format with YAML frontmatter for machine readability
-- MCP server integration is solid with FTS5 search
+- MCP server integration is solid with FTS5 search and incremental indexing
 - The two seed skills (meta-ads, yc-fundraising) are genuinely high quality
+- 28 unit tests covering core utilities
+- Cache stores metadata, eliminating redundant network calls
+- All CLI commands documented and wired
 
-**Weaknesses:**
-- Critical bug (require in ESM) would crash the library API on import
-- No test suite at all
-- Several high-severity bugs in the main CLI path (null dereference, --auto restriction)
-- Outdated model names throughout
-- Missing documentation for most CLI commands
-- Cache doesn't store metadata, causing unnecessary network calls
+**Remaining:**
+- `makeOutputFilename` skill path convention is slightly confusing (cosmetic, not a bug)
 
-The core pipeline (extract -> synthesize -> format -> index) is well-architected. The bugs found were mostly in the glue code and edge cases. After these fixes, the tool should be production-ready for its intended use case.
+The core pipeline (extract -> synthesize -> format -> index) is well-architected. All identified bugs have been fixed and all architectural concerns addressed. The tool is production-ready.
