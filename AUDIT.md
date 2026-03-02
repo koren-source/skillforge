@@ -304,3 +304,35 @@ Added a real integration test that runs `skillforge watch` against a known publi
 **Remaining:** None.
 
 The core pipeline (extract -> synthesize -> format -> index) is well-architected. All identified bugs have been fixed, all architectural concerns addressed, and the filename convention is now consistent. The tool is production-ready.
+
+---
+
+## v4.1.0 — Browser Cookies + Whisper Fallback (2026-03-02)
+
+### FIX 20: Browser cookies for subtitle downloads (fast path)
+
+**File:** `src/extract.js:257-287`
+**Severity:** High (YouTube 429 rate limits block subtitle downloads)
+
+Added `--cookies-from-browser chrome` to the yt-dlp subtitle download call in `fetchTranscriptForUrl`. This passes Chrome session cookies to yt-dlp, authenticating requests and reducing 429 rate limit errors. Cookies are only added to the subtitle download — metadata, scan, and channel listing calls are unchanged.
+
+The subtitle download now uses `runYtDlpOnce` (single attempt, no retries) since the Whisper fallback handles failures more efficiently than exponential backoff retries.
+
+### FIX 21: Whisper transcription fallback (slow path)
+
+**File:** `src/extract.js:157-208, 289-319`
+**Severity:** High (no recovery path when subtitle download fails)
+
+When subtitle download fails for any reason (429, auth error, no subtitles available), the tool now automatically:
+1. Downloads audio-only via yt-dlp (`-x --audio-format wav`) — different endpoint, not rate-limited
+2. Transcribes the audio with Whisper CLI (`whisper <file> --output_format txt --model base`)
+3. Uses the Whisper transcript in place of the subtitle transcript
+4. Cleans up temp audio files via the existing `finally` block
+
+Added two helper functions:
+- `checkWhisperInstalled()` — spawns `whisper --help` to verify PATH availability before attempting transcription
+- `runWhisper(audioPath, outputDir)` — runs Whisper CLI, reads the output `.txt` file, returns transcript text
+
+If Whisper is not installed, throws a clear error: `"Whisper is not installed or not on PATH. Install it with: pip install openai-whisper"`.
+
+The rest of the codebase is unaffected — `fetchTranscriptForUrl` returns the same transcript string format regardless of which path (subtitles or Whisper) succeeded.

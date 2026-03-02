@@ -154,6 +154,59 @@ async function readFirstSubtitleFile(tempDir) {
   };
 }
 
+async function checkWhisperInstalled() {
+  return new Promise((resolve) => {
+    const child = spawn("whisper", ["--help"], { stdio: "ignore" });
+    child.on("error", () => resolve(false));
+    child.on("close", () => resolve(true));
+  });
+}
+
+async function runWhisper(audioPath, outputDir) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(
+      "whisper",
+      [audioPath, "--output_format", "txt", "--model", "base", "--output_dir", outputDir],
+      { stdio: ["ignore", "pipe", "pipe"] }
+    );
+
+    let stderr = "";
+    child.stdout.on("data", () => {});
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk.toString();
+    });
+
+    child.on("error", (error) => {
+      if (error.code === "ENOENT") {
+        reject(
+          new Error(
+            "Whisper is not installed or not on PATH. Install it with: pip install openai-whisper\nSee: https://github.com/openai/whisper#setup"
+          )
+        );
+        return;
+      }
+      reject(error);
+    });
+
+    child.on("close", async (code) => {
+      if (code !== 0) {
+        reject(new Error(`Whisper exited with code ${code}: ${stderr.trim()}`));
+        return;
+      }
+
+      const baseName = path.basename(audioPath, path.extname(audioPath));
+      const txtPath = path.join(outputDir, `${baseName}.txt`);
+
+      try {
+        const text = await fs.readFile(txtPath, "utf8");
+        resolve(text.trim());
+      } catch {
+        reject(new Error(`Whisper completed but output file not found: ${txtPath}`));
+      }
+    });
+  });
+}
+
 async function fetchVideoMetadata(url) {
   const { stdout } = await runYtDlp([
     "--dump-single-json",
@@ -197,35 +250,79 @@ async function fetchTranscriptForUrl(url) {
 
   try {
     const metadata = await fetchVideoMetadata(url);
-    await runYtDlp(
-      [
-        "--skip-download",
-        "--write-auto-sub",
-        "--write-sub",
-        "--sub-langs",
-        "en.*,en",
-        "--sub-format",
-        "vtt",
-        "-o",
-        path.join(tempDir, "%(id)s.%(ext)s"),
-        url,
-      ],
-      { cwd: tempDir }
-    );
 
-    const subtitleResult = await readFirstSubtitleFile(tempDir);
-    if (!subtitleResult) {
+    let transcript = null;
+    let captionSource = null;
+
+    // Fast path: subtitle download with browser cookies
+    try {
+      await runYtDlpOnce(
+        [
+          "--cookies-from-browser", "chrome",
+          "--skip-download",
+          "--write-auto-sub",
+          "--write-sub",
+          "--sub-langs",
+          "en.*,en",
+          "--sub-format",
+          "vtt",
+          "-o",
+          path.join(tempDir, "%(id)s.%(ext)s"),
+          url,
+        ],
+        { cwd: tempDir }
+      );
+
+      const subtitleResult = await readFirstSubtitleFile(tempDir);
+      if (subtitleResult) {
+        const vttContent = await fs.readFile(subtitleResult.path, "utf8");
+        const parsed = parseVtt(vttContent);
+        if (parsed.trim()) {
+          transcript = parsed;
+          captionSource = subtitleResult.captionSource;
+        }
+      }
+    } catch {
+      // Subtitle download failed (429, auth, no subs, etc.) — fall through to Whisper
+    }
+
+    // Slow path: Whisper transcription fallback
+    if (!transcript) {
+      process.stderr.write(
+        "[skillforge] Subtitle download failed, falling back to Whisper transcription...\n"
+      );
+
+      if (!(await checkWhisperInstalled())) {
+        throw new Error(
+          "Whisper is not installed or not on PATH. Install it with: pip install openai-whisper\n" +
+          "See: https://github.com/openai/whisper#setup"
+        );
+      }
+
+      await runYtDlp(
+        ["-x", "--audio-format", "wav", "-o", path.join(tempDir, "whisper-audio.%(ext)s"), url],
+        { cwd: tempDir }
+      );
+
+      // Find the audio file yt-dlp produced
+      const files = await fs.readdir(tempDir);
+      const audioFile = files.find(
+        (f) => f.startsWith("whisper-audio.") && /\.(wav|mp3|m4a|opus|webm|ogg|flac)$/i.test(f)
+      );
+      if (!audioFile) {
+        throw new Error("Audio download completed but no audio file found in temp directory");
+      }
+
+      const audioPath = path.join(tempDir, audioFile);
+      transcript = await runWhisper(audioPath, tempDir);
+      captionSource = "whisper";
+    }
+
+    if (!transcript || !transcript.trim()) {
       return null;
     }
 
-    const vttContent = await fs.readFile(subtitleResult.path, "utf8");
-    const transcript = parseVtt(vttContent);
-
-    if (!transcript.trim()) {
-      return null;
-    }
-
-    if (subtitleResult.captionSource === "auto") {
+    if (captionSource === "auto") {
       console.warn(`[SkillForge] Warning: using auto-generated captions for: ${metadata.title || url}`);
     }
 
@@ -245,18 +342,8 @@ async function fetchTranscriptForUrl(url) {
       channelTitle: metadata.channel || metadata.uploader || null,
       channelUrl: metadata.channel_url || metadata.uploader_url || null,
       transcript,
-      captionSource: subtitleResult.captionSource,
+      captionSource,
     };
-  } catch (error) {
-    const message = String(error.message || "");
-    if (
-      message.includes("There are no subtitles") ||
-      message.includes("Subtitles are not available")
-    ) {
-      return null;
-    }
-
-    throw error;
   } finally {
     await fs.rm(tempDir, { recursive: true, force: true });
   }
