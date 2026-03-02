@@ -161,6 +161,70 @@ ${sources}
 }
 
 
+
+function buildChunkExtractionPrompt(chunkText, topic, chunkIndex, totalChunks) {
+  return `
+You are extracting key insights from part ${chunkIndex + 1} of ${totalChunks} of a YouTube transcript.
+
+Topic: ${topic}
+Chunk: ${chunkIndex + 1}/${totalChunks}
+
+Return strict JSON only:
+{
+  "frameworks": [{"name": "string", "description": "string", "steps": ["string"]}],
+  "tactics": [{"name": "string", "description": "string", "when_to_use": "string"}],
+  "key_quotes": [{"quote": "string", "context": "string"}],
+  "key_numbers": [{"stat": "string", "significance": "string"}]
+}
+
+Rules:
+- Only extract content that appears in THIS chunk. Do not infer from prior context.
+- Skip generic statements. Only include specific, actionable frameworks or memorable quotes.
+- Frameworks must have at least 2 clear steps.
+- Numbers must be specific (percentages, dollar amounts, ratios, timeframes).
+- Return empty arrays if nothing qualifies — do not fabricate.
+
+Transcript chunk:
+${chunkText}
+`.trim();
+}
+
+function buildCompilationPrompt(topic, videoTitle, chunkExtractions) {
+  const extractionSummary = chunkExtractions.map((e, i) =>
+    `Chunk ${i + 1}:\n${JSON.stringify(e, null, 2)}`
+  ).join("\n\n---\n\n");
+
+  return `
+You are compiling a final skill document from extractions across ${chunkExtractions.length} chunks of a YouTube video.
+
+Video: ${videoTitle}
+Topic: ${topic}
+
+Combine and deduplicate the extractions below into a single high-quality skill document.
+
+Return strict JSON only with this exact schema:
+{
+  "topic": "string",
+  "summary": "2-3 sentence summary of what this video teaches",
+  "frameworks": [{"name": "string", "description": "string", "steps": ["string"]}],
+  "tactics": [{"name": "string", "description": "string", "when_to_use": "string"}],
+  "key_quotes": [{"quote": "string", "context": "string"}],
+  "key_numbers": [{"stat": "string", "significance": "string"}],
+  "agent_guidance": "How an AI agent should use this knowledge when helping users"
+}
+
+Rules:
+- Merge duplicate frameworks (same concept, different wording) into the best version.
+- Keep the top 5 frameworks, top 6 tactics, top 5 quotes, top 6 numbers.
+- Prioritize specific, actionable, and memorable content.
+- Write agent_guidance as a practical guide for an AI agent applying this knowledge.
+
+Chunk extractions:
+${extractionSummary}
+`.trim();
+}
+
+
 function extractJson(text) {
   text = stripAnsi(text);
   const fencedMatch = text.match(/```json\s*([\s\S]*?)```/i);
@@ -291,41 +355,24 @@ async function synthesizeKnowledge({ transcripts, topic, model, intent, outputPa
       const fullText = bigTranscript.transcript;
       const totalLen = fullText.length;
 
-      let sampledTranscripts;
-      if (totalLen > 3 * CHUNK_LIMIT) {
-        // For very long videos: sample beginning, middle, and end
-        const third = Math.floor(totalLen / 3);
-        const sampleSize = Math.min(CHUNK_LIMIT, Math.floor(totalLen / 3));
-        sampledTranscripts = [
-          { ...bigTranscript, transcript: fullText.slice(0, sampleSize), title: bigTranscript.title + " [Part 1/3]" },
-          { ...bigTranscript, transcript: fullText.slice(third, third + sampleSize), title: bigTranscript.title + " [Part 2/3]" },
-          { ...bigTranscript, transcript: fullText.slice(totalLen - sampleSize), title: bigTranscript.title + " [Part 3/3]" },
-        ];
-      } else {
-        const textChunks = chunkText(fullText, CHUNK_LIMIT, CHUNK_OVERLAP);
-        sampledTranscripts = textChunks.map((chunk, i) => ({
-          ...bigTranscript,
-          transcript: chunk,
-          title: bigTranscript.title + ` [Part ${i+1}/${textChunks.length}]`,
-        }));
+      // True sequential chunking: extract from every chunk, then compile
+      const textChunks = chunkText(fullText, CHUNK_LIMIT, CHUNK_OVERLAP);
+      const chunkExtractions = [];
+      for (let i = 0; i < textChunks.length; i++) {
+        const chunkPrompt = buildChunkExtractionPrompt(textChunks[i], topic, i, textChunks.length);
+        const raw = callClaudeCli(chunkPrompt, effectiveModel);
+        try {
+          const parsed = JSON.parse(extractJson(raw));
+          chunkExtractions.push(parsed);
+        } catch (_) {
+          // Skip chunks that fail to parse — don't let one bad chunk kill the whole video
+        }
+        await saveCheckpoint(slug, { phase: "chunk", index: i, count: textChunks.length });
       }
 
-      const summaries = [];
-      for (let i = 0; i < sampledTranscripts.length; i++) {
-        const prompt = buildPrompt({ topic, transcripts: [sampledTranscripts[i]] });
-        const chunkResult = await callProvider(prompt, effectiveModel);
-        summaries.push(chunkResult);
-        await saveCheckpoint(slug, { phase: "chunk", index: i, partial: summaries });
-      }
-
-      // Merge summaries into one synthesis
-      const mergedTranscripts = summaries.map((s, i) => ({
-        title: `Part ${i + 1} summary`,
-        url: transcripts[0].url,
-        transcript: JSON.stringify(s),
-      }));
-      const mergePrompt = buildPrompt({ topic, transcripts: mergedTranscripts });
-      result = await callProvider(mergePrompt, effectiveModel);
+      // Final compilation pass — merge all chunk extractions into one skill
+      const compilationPrompt = buildCompilationPrompt(topic, transcripts[0].title, chunkExtractions);
+      result = await callProvider(compilationPrompt, effectiveModel);
     } else {
       // Multiple chunks of transcripts
       const summaries = [];
