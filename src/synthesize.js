@@ -280,7 +280,7 @@ async function callProvider(prompt, model) {
   return synthesizeWithOpenAI(prompt, model);
 }
 
-async function callProviderRaw(prompt, model = "claude-sonnet-4-20250514") {
+async function callProviderRaw(prompt, model = "gpt-4o-mini") {
   return callProvider(prompt, model);
 }
 
@@ -422,7 +422,7 @@ async function synthesizeKnowledge({ transcripts, topic, model, intent, outputPa
   return normalized;
 }
 
-async function previewTranscript({ transcript, topic, model = "claude-sonnet-4-20250514" }) {
+async function previewTranscript({ transcript, topic, model = "gpt-4o-mini" }) {
   const truncated = chunkText(transcript, 12000)[0];
   const prompt = `
 You are previewing a YouTube video transcript to help a user decide if it's worth extracting into an agent skill.

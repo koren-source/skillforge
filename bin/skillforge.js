@@ -432,7 +432,7 @@ program
   .option(
     "--model <model>",
     "AI model to use",
-    "claude-sonnet-4-20250514"
+    "gpt-4o-mini"
   )
   .action(
     withErrorHandler(async (url, options) => {
@@ -626,7 +626,7 @@ program
   .command("watch <url>")
   .description("Preview a video's content before building a skill")
   .option("--skill <topic>", "Topic slug for the skill (enables creator-scoped library path)")
-  .option("--model <model>", "AI model to use", "claude-sonnet-4-20250514")
+  .option("--model <model>", "AI model to use", "gpt-4o-mini")
   .option("--output <path>", "Where to save the generated output", "./output")
   .option("--format <format>", "Output format: skill, markdown, or json", "skill")
   .option("--intent <intent>", "Intent string for skill indexing")
