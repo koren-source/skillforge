@@ -219,7 +219,7 @@ function formatDocument(format, data) {
 
 function makeOutputFilename(format, topicSlug) {
   if (format === "skill") {
-    return pathJoinSafe(topicSlug, "SKILL.md");
+    return `${topicSlug}.skill.md`;
   }
 
   if (format === "markdown") {
@@ -231,10 +231,6 @@ function makeOutputFilename(format, topicSlug) {
   }
 
   throw new Error(`Unsupported format: ${format}`);
-}
-
-function pathJoinSafe(...parts) {
-  return parts.join("/");
 }
 
 export {

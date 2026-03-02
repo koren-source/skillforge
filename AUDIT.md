@@ -194,9 +194,31 @@ The README only documented `watch`, `recall`, `list`, and `check-auth`. Missing:
 
 All previously identified concerns have been addressed. See "Follow-Up Changes" below.
 
-### Remaining Minor Notes
+### All Concerns Resolved
 
-4. **`makeOutputFilename` for skill format** creates a nested path (`topicSlug/SKILL.md`) via `pathJoinSafe`. This doesn't match the library convention of `topic.skill.md`. Works for non-library output but is cosmetic — not a bug.
+No remaining issues. See final fixes below.
+
+---
+
+## Final Fixes (10/10)
+
+### FIX 18: `makeOutputFilename` skill path convention
+
+**File:** `src/format.js:221-223`
+**Severity:** Low (cosmetic inconsistency)
+
+`makeOutputFilename("skill", slug)` returned `slug/SKILL.md` (nested directory path via `pathJoinSafe`), but the library convention everywhere else is `topic.skill.md` (flat file). This caused inconsistent output paths when using `--output` with skill format vs the default library path.
+
+**Before:** `pathJoinSafe(topicSlug, "SKILL.md")` → `my-topic/SKILL.md`
+**After:** `` `${topicSlug}.skill.md` `` → `my-topic.skill.md`
+
+Removed the now-unused `pathJoinSafe` helper. Updated unit test assertion.
+
+### FIX 19: End-to-end integration test
+
+**File:** `test/integration.test.js` (NEW)
+
+Added a real integration test that runs `skillforge watch` against a known public YouTube video, verifies the output `.skill.md` file exists, is non-empty, has valid YAML frontmatter with required fields (`name`, `built_at`, `model`), and contains expected sections (`## Frameworks`, `## Tactics`). Test auto-skips if `yt-dlp` is not installed or network is unavailable.
 
 ---
 
@@ -224,6 +246,7 @@ All previously identified concerns have been addressed. See "Follow-Up Changes" 
 | `test/extract.test.js` | NEW | 10 tests for parseVtt + extractVideoId |
 | `test/format.test.js` | NEW | 13 tests for slugify, slugifyCreator, makeOutputFilename |
 | `test/cache.test.js` | NEW | 5 tests for cache set/get/has |
+| `test/integration.test.js` | NEW | 1 e2e test (skillforge watch → validates output) |
 | `skills/meta-ads/SKILL.md` | 279 | Clean, high quality |
 | `skills/yc-fundraising/SKILL.md` | 216 | Clean, high quality |
 | `skills/README.md` | 17 | Clean |
@@ -264,7 +287,7 @@ All previously identified concerns have been addressed. See "Follow-Up Changes" 
 
 ---
 
-## Overall Health Score: 9/10
+## Overall Health Score: 10/10
 
 **Strengths:**
 - Clean modular architecture with clear separation of concerns
@@ -273,11 +296,11 @@ All previously identified concerns have been addressed. See "Follow-Up Changes" 
 - Well-designed skill format with YAML frontmatter for machine readability
 - MCP server integration is solid with FTS5 search and incremental indexing
 - The two seed skills (meta-ads, yc-fundraising) are genuinely high quality
-- 28 unit tests covering core utilities
+- 28 unit tests + 1 integration test covering core utilities and end-to-end flow
 - Cache stores metadata, eliminating redundant network calls
 - All CLI commands documented and wired
+- Consistent flat filename convention (`topic.skill.md`) across library and output paths
 
-**Remaining:**
-- `makeOutputFilename` skill path convention is slightly confusing (cosmetic, not a bug)
+**Remaining:** None.
 
-The core pipeline (extract -> synthesize -> format -> index) is well-architected. All identified bugs have been fixed and all architectural concerns addressed. The tool is production-ready.
+The core pipeline (extract -> synthesize -> format -> index) is well-architected. All identified bugs have been fixed, all architectural concerns addressed, and the filename convention is now consistent. The tool is production-ready.
