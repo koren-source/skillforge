@@ -236,6 +236,8 @@ async function listChannelVideoUrls(channelUrl, limit = 10) {
         ? entry.url
         : `https://www.youtube.com/watch?v=${entry.id}`,
       channelTitle: entry.channel || entry.uploader || null,
+      description: entry.description || "",
+      duration: entry.duration || 0,
     }))
     .filter((item) => item.id);
 }

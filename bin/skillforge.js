@@ -27,6 +27,7 @@ import {
 import { scoreVideos } from "../src/score.js";
 import * as propose from "../src/propose.js";
 import * as skillIndex from "../src/skillIndex.js";
+import { loadConfig, addTrusted, removeTrusted, isTrusted } from "../src/config.js";
 
 const program = new Command();
 
@@ -237,6 +238,54 @@ program
   .description("Turn YouTube videos, channels, and topics into agent-ready skills")
   .version("0.5.0");
 
+// ── trust ────────────────────────────────────────────────────────────
+const trust = program
+  .command("trust")
+  .description("Manage trusted creators list");
+
+trust
+  .command("add <creator>")
+  .description("Add a creator to the trusted list")
+  .action(
+    withErrorHandler(async (creator) => {
+      const normalized = await addTrusted(creator);
+      process.stdout.write(chalk.green(`Added ${normalized} to trusted creators.\n`));
+    })
+  );
+
+trust
+  .command("list")
+  .description("List all trusted creators")
+  .action(
+    withErrorHandler(async () => {
+      const config = await loadConfig();
+      if (config.trusted_creators.length === 0) {
+        process.stdout.write(chalk.yellow("No trusted creators yet.\n"));
+        process.stdout.write(chalk.dim('Run: skillforge trust add @CreatorName\n'));
+        return;
+      }
+      process.stdout.write(chalk.bold("Trusted creators:\n"));
+      for (const c of config.trusted_creators) {
+        process.stdout.write(`  ${chalk.green(c)}\n`);
+      }
+    })
+  );
+
+trust
+  .command("remove <creator>")
+  .description("Remove a creator from the trusted list")
+  .action(
+    withErrorHandler(async (creator) => {
+      const removed = await removeTrusted(creator);
+      if (removed) {
+        const normalized = creator.startsWith("@") ? creator : `@${creator}`;
+        process.stdout.write(chalk.green(`Removed ${normalized} from trusted creators.\n`));
+      } else {
+        process.stdout.write(chalk.yellow(`Creator "${creator}" was not in the trusted list.\n`));
+      }
+    })
+  );
+
 // ── check ────────────────────────────────────────────────────────────
 program
   .command("check")
@@ -438,12 +487,6 @@ program
     withErrorHandler(async (url, options) => {
       const spinner = ora({ text: "Preparing build", color: "cyan" }).start();
 
-      if (options.auto) {
-        process.stdout.write(
-          chalk.yellow("Auto mode: skipping proposal review\n")
-        );
-      }
-
       if (!["skill", "markdown", "json"].includes(options.format)) {
         throw new Error("`--format` must be one of: skill, markdown, json.");
       }
@@ -457,7 +500,59 @@ program
       let intent = options.intent || "";
       let channelSources = null;
 
-      if (options.proposal && !options.auto) {
+      if (options.auto) {
+        // ── Auto mode: score metadata first, then fetch transcripts for top N ──
+        if (!intent) {
+          throw new Error("--auto requires --intent to score videos.");
+        }
+        if (!options.channel && !(options.channels && options.channels.length)) {
+          throw new Error("--auto requires --channel or --channels.");
+        }
+
+        const source = resolveSource(url, options);
+
+        // Gather metadata (no transcripts) — uses larger limit for scoring pool
+        spinner.text = "Fetching video metadata for scoring";
+        const sourceItems = await gatherSourceItems(source, options.limit * 3);
+        if (!sourceItems.discovered.length) {
+          throw new Error("No videos were found for the requested source.");
+        }
+
+        // Check if channel creator is trusted
+        const channelCreator = sourceItems.discovered[0]?.channelTitle;
+        if (channelCreator) {
+          const trusted = await isTrusted(channelCreator);
+          if (!trusted) {
+            spinner.fail(`Creator "${channelCreator}" is not in your trusted list.`);
+            process.stdout.write(
+              chalk.dim(`Run: skillforge trust add "@${channelCreator.replace(/^@/, "")}"\n`)
+            );
+            process.exitCode = 1;
+            return;
+          }
+        }
+
+        // Score all videos by metadata (no transcripts yet)
+        spinner.text = `Scoring ${sourceItems.discovered.length} videos against intent`;
+        const scored = scoreVideos(sourceItems.discovered, intent);
+        const topN = scored.filter((v) => v.score > 0).slice(0, options.limit);
+
+        if (!topN.length) {
+          throw new Error("No videos scored above 0 for this intent.");
+        }
+
+        process.stdout.write(chalk.yellow("Auto mode: scoring metadata, fetching top matches only\n"));
+        for (const v of topN) {
+          const bar = chalk.green("█".repeat(Math.round(v.score / 5)));
+          process.stdout.write(
+            `  ${chalk.dim(String(v.score).padStart(3))}  ${bar}  ${v.title}\n`
+          );
+        }
+
+        sourceUrls = topN.map((v) => v.url);
+        topic = sourceItems.topic;
+        channelSources = sourceItems.sources || null;
+      } else if (options.proposal) {
         // Build from proposal
         spinner.text = "Loading proposal";
         const proposal = await propose.load(options.proposal);
@@ -484,7 +579,7 @@ program
           throw new Error("No videos matched the selected skills in this proposal.");
         }
       } else {
-        // Direct build flow (also used when --auto is set)
+        // Direct build flow
         const source = resolveSource(url, options);
 
         spinner.text = "Resolving source videos";
