@@ -4,280 +4,162 @@
 
 # SkillForge
 
-*What if your AI agent could watch YouTube and learn new skills?*
+**Give your agent a YouTube video and it will learn a skill.**
 
-SkillForge is an open-source Node.js CLI that turns YouTube videos, channels, playlists, and search topics into structured knowledge files for AI agents. It pulls transcripts with `yt-dlp`, synthesizes the material with your own LLM API keys, and exports the result as an agent-ready `SKILL.md`, a clean Markdown brief, or structured JSON. The project is built so any agent or human can bring their own keys and generate reusable skills from public video knowledge.
+SkillForge is an open-source CLI that turns any YouTube video into structured knowledge your AI agent can actually use. Drop in a URL, and SkillForge:
 
-> Run `skillforge build --topic "meta ads"` and a `SKILL.md` appears in `./output/` in under a minute.
+1. **Pulls the transcript** — downloads the full video transcript via `yt-dlp`
+2. **Learns from it** — Claude reads the transcript and extracts frameworks, tactics, key quotes, and key numbers
+3. **Creates a skill** — saves a clean, structured skill doc to `~/.skillforge/library/@creator/video-title.skill.md`
+4. **Organizes by creator** — your agent's knowledge is filed by who taught it, searchable by topic
 
-## What It Does
+Your agent can then recall that knowledge instantly:
 
-Give SkillForge a single video, a full channel, a set of URLs, or a topic like `"meta ads"` or `"cold email"`. It collects transcript data, filters out missing subtitle sources, extracts the highest-signal frameworks and tactics, and outputs an artifact you can feed directly into an agent workflow.
+```bash
+skillforge recall --intent "pricing strategy"
+# → Returns: Alex Hormozi — The Mathematics of Business (100% relevance)
+```
 
-The result is not a transcript dump. SkillForge is designed to produce operational knowledge:
+The result isn't a transcript dump. It's operational knowledge — frameworks your agent can reason with, tactics it can apply, and quotes it can cite.
 
-- action-oriented frameworks
-- step-by-step processes
-- key quotes with context
-- concepts and definitions
-- portable skill files for reuse
+---
 
 ## Quick Start
 
-Zero-install run:
-
 ```bash
-npx skillforge build --topic "meta ads"
-```
-
-This searches YouTube, processes up to 10 relevant videos by default, and writes a generated skill file into `./output/`.
-
-## Installation
-
-```bash
+# Install
 npm install -g skillforge
+
+# Install transcript fetcher
+brew install yt-dlp  # or: pip install yt-dlp
+
+# Authenticate (one time — uses your Claude Code session, no API key needed)
+claude login
+
+# Give your agent a video to learn from
+skillforge watch https://youtu.be/A_tx40lNpf8
 ```
 
-You also need:
+That's it. In ~60 seconds, your agent knows what's in that video.
 
-- `yt-dlp` installed and available on your `PATH`
-- Claude CLI installed and authenticated
+---
 
-## Setup
+## How It Works
 
-SkillForge uses your Claude CLI authentication. No API keys required.
+```
+YouTube URL
+    ↓
+yt-dlp downloads transcript
+    ↓
+Claude reads the full transcript
+    ↓
+Skill created: frameworks, tactics, quotes, key numbers
+    ↓
+Organized in ~/.skillforge/library/@creator/topic.skill.md
+    ↓
+Agent recalls it by intent anytime
+```
+
+The skill doc is structured for agents — not humans. It contains what an agent needs to reason, advise, and act: not summaries, but frameworks with steps, tactics with context, numbers with significance.
+
+---
+
+## Commands
+
+### `skillforge watch <url>`
+The core command. Give it a single YouTube video URL, get a skill.
+
+```bash
+skillforge watch https://youtu.be/A_tx40lNpf8
+# → Skill saved to ~/.skillforge/library/@alex-hormozi/the-mathematics-of-business-explained.skill.md
+```
+
+### `skillforge recall --intent "topic"`
+Search your skill library by what you want to know.
+
+```bash
+skillforge recall --intent "pricing"
+# → 100%  Alex Hormozi — The Mathematics of Business, Explained
+```
+
+### `skillforge list`
+See all skills your agent has learned.
+
+```bash
+skillforge list
+# @alex-hormozi
+#   ↳ the-mathematics-of-business-explained  (4 frameworks, built 2026-03-01)
+```
+
+### `skillforge check-auth`
+Verify your Claude CLI is set up correctly.
+
+```bash
+skillforge check-auth --validate
+```
+
+---
+
+## Authentication
+
+SkillForge uses your Claude CLI session. No API keys required.
 
 ```bash
 # 1. Install Claude Code from https://claude.ai/code
-# 2. Authenticate once:
+# 2. Log in once:
 claude login
-
-# 3. Verify setup:
+# 3. Verify:
 skillforge check-auth --validate
 ```
 
-That's it. SkillForge will use your Claude CLI session for all AI synthesis.
+If you prefer to use API keys directly, set `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` in your environment — SkillForge will use them automatically.
 
-## Usage
-
-### Single video
-
-```bash
-skillforge build "https://www.youtube.com/watch?v=VIDEO_ID"
-```
-
-### Full channel
-
-```bash
-skillforge build --channel "https://www.youtube.com/@channelname/videos" --limit 15
-```
-
-### Search by topic
-
-```bash
-skillforge build --topic "cold email"
-```
-
-### Multiple specific URLs
-
-```bash
-skillforge build --urls "https://youtu.be/a1,https://youtu.be/b2,https://youtu.be/c3"
-```
-
-### Auto mode (skip proposal review)
-
-Skip the proposal step entirely and go straight from transcript to synthesis:
-
-```bash
-skillforge build --topic "meta ads" --auto
-```
-
-Prints a warning (`Auto mode: skipping proposal review`) and builds immediately.
-
-### Multi-channel build
-
-Fetch transcripts from multiple channels and merge into one SKILL.md with deduped frameworks and a Sources section listing all channels:
-
-```bash
-skillforge build --channels "https://www.youtube.com/@channel1/videos,https://www.youtube.com/@channel2/videos" --intent "meta ads" --limit 5
-```
-
-### Check if a skill exists
-
-Quickly check whether a skill already exists in your library for a given intent:
-
-```bash
-skillforge check --intent "meta ads"
-```
-
-If matches are found, prints them with relevance percentages and exits 0. If none exist, suggests running `skillforge scan` and exits 1.
-
-### Suggest channels for a topic
-
-Search YouTube for channels related to a topic and get ranked suggestions:
-
-```bash
-skillforge suggest --topic "cold email"
-```
-
-Outputs the top 5 channel suggestions sorted by relevance, then suggests a `skillforge scan` command for the top channel.
-
-### Output formats
-
-```bash
-skillforge build --topic "meta ads" --format skill
-skillforge build --topic "meta ads" --format markdown
-skillforge build --topic "meta ads" --format json
-```
-
-### Custom output directory and model
-
-```bash
-skillforge build --topic "yc fundraising" --output ./generated --model claude-sonnet-4-20250514
-```
-
-### CLI help
-
-```bash
-skillforge --help
-skillforge check --help
-skillforge suggest --help
-skillforge build --help
-```
-
-## JavaScript API
-
-SkillForge exports a programmatic API for use in your own Node.js scripts and agent pipelines:
-
-```js
-import { recall, build, check } from "skillforge";
-
-// Check if a skill exists
-const { found, results } = await check("meta ads");
-
-// Search existing skills by intent
-const skills = await recall("cold email outreach");
-
-// Build a new skill programmatically
-const result = await build({
-  topic: "meta ads",
-  intent: "meta ads strategy",
-  auto: true,
-  model: "claude-sonnet-4-20250514",
-  output: "./output",
-});
-console.log(result.filePath, result.transcriptCount);
-```
-
-The `build()` function accepts all the same options as the CLI: `channel`, `channels`, `topic`, `urls`, `intent`, `auto`, `model`, `output`, `format`, and `limit`.
-
-## Freshness Metadata
-
-Every generated SKILL.md now includes freshness metadata in its YAML frontmatter:
-
-```yaml
----
-name: "Meta Ads"
-description: "Synthesized YouTube knowledge about meta ads."
-usage: "Load this skill when working on meta ads strategy, execution, or review tasks."
-built_at: "2026-03-01T12:00:00.000Z"
-source_videos:
-  - "https://www.youtube.com/watch?v=abc123"
-  - "https://www.youtube.com/watch?v=def456"
----
-```
-
-- `built_at`: ISO 8601 timestamp of when the skill was generated
-- `source_videos`: Array of YouTube URLs used to build the skill
-- Multi-channel builds also include a `sources` list of channel URLs
-
-The `built_at` timestamp is also stored in the skill index for freshness queries.
-
-## Output Formats
-
-SkillForge supports three export targets:
-
-- `skill` for agent-ready `SKILL.md` documents with frontmatter
-- `markdown` for human-readable synthesis docs
-- `json` for structured downstream processing
-
-Example snippet from `skill` output:
-
-```md
----
-name: Cold Email Outreach
-description: Synthesized YouTube knowledge about cold email outreach.
-usage: Load this skill when working on cold email outreach strategy, execution, or review tasks.
-built_at: "2026-03-01T12:00:00.000Z"
-source_videos:
-  - "https://www.youtube.com/watch?v=abc123"
 ---
 
-# AI-Synthesized Knowledge: Cold Email Outreach
-> Generated by SkillForge from 8 YouTube videos on March 1, 2026
+## Skill Library Structure
 
-## Frameworks
-
-## The 4-Part Cold Email Structure
+Every skill is stored at:
+```
+~/.skillforge/library/@creator-handle/video-title.skill.md
 ```
 
-Full example: [examples/output-sample.md](/Users/q/Projects/skillforge/examples/output-sample.md)
+The folder is the creator. The file is what they taught. Your agent always knows the source.
 
-## Community Skills
+```
+~/.skillforge/library/
+  @alex-hormozi/
+    the-mathematics-of-business-explained.skill.md
+    100m-offers-pricing-framework.skill.md
+  @andrew-huberman/
+    sleep-optimization-protocols.skill.md
+```
 
-The starter skill library lives in [skills/](/Users/q/Projects/skillforge/skills/README.md).
+---
 
-Included examples:
+## Advanced: Build from a Full Channel
 
-- [skills/meta-ads/SKILL.md](/Users/q/Projects/skillforge/skills/meta-ads/SKILL.md)
-- [skills/yc-fundraising/SKILL.md](/Users/q/Projects/skillforge/skills/yc-fundraising/SKILL.md)
-
-To contribute a community skill:
-
-1. Create a folder inside `skills/`
-2. Add a high-signal `SKILL.md`
-3. Submit a pull request with the source context or rationale
-
-## Troubleshooting
-
-### Authentication Errors
-
-If you see authentication errors, run:
+Trust a creator, then auto-build skills on any topic:
 
 ```bash
-skillforge check-auth --validate
+# Add a creator to your trusted list
+skillforge trust add @AlexHormozi
+
+# Auto-score and build from their best videos on a topic
+skillforge build --auto --channel https://youtube.com/@AlexHormozi --intent "retention"
 ```
 
-Common issues:
-- **Claude CLI not installed**: Install from https://claude.ai/code
-- **Not logged in**: Run `claude login` to authenticate
-- **Rate limited**: Wait a few minutes and try again
+SkillForge will score all videos by relevance to your intent, pick the top matches, and synthesize them — no manual selection required.
 
-### yt-dlp Issues
+---
 
-If transcripts fail to download:
-- Ensure `yt-dlp` is installed: `brew install yt-dlp` or `pip install yt-dlp`
-- Update to latest: `yt-dlp -U`
-- Some videos don't have subtitles available
+## Requirements
 
-## Built By
+- Node.js 18+
+- `yt-dlp` (transcript fetching)
+- Claude CLI authenticated via `claude login`
 
-Built by [Koren Saida](https://github.com/koren-source) at [Cutbox.ai](https://cutbox.ai) — the AI-powered creative ops platform.
-
-## Contributing
-
-Contributions are welcome across extraction quality, synthesis prompts, formatter improvements, and community skills.
-
-Typical contribution flow:
-
-1. Fork the repo
-2. Create a branch
-3. Make the change
-4. Add or improve a skill under `skills/` when relevant
-5. Open a pull request with clear before/after behavior
-
-If you are contributing a new skill, optimize for practical value over breadth. The best community skills are opinionated, specific, and immediately usable.
+---
 
 ## License
 
-MIT
+MIT — Built with ❤️ by [Cutbox.ai](https://cutbox.ai)
