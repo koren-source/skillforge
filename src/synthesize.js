@@ -4,7 +4,7 @@ import os from "node:os";
 import process from "node:process";
 import Anthropic from "@anthropic-ai/sdk";
 import * as skillIndex from "./skillIndex.js";
-import { slugify } from "./format.js";
+import { slugify, slugifyCreator } from "./format.js";
 
 const CHECKPOINT_DIR = path.join(os.homedir(), ".skillforge", "checkpoints");
 
@@ -151,16 +151,22 @@ function extractJson(text) {
   return text.slice(firstBrace, lastBrace + 1);
 }
 
-function normalizeSynthesis(result, transcripts) {
+function normalizeSynthesis(result, transcripts, creatorMeta) {
   const now = new Date().toISOString();
-  return {
+  const topicSlug = slugify(result.topic || "youtube-knowledge");
+  const normalized = {
     topic: result.topic || "YouTube Knowledge",
+    topic_slug: topicSlug,
     summary: result.summary || "",
     source_count: transcripts.length,
     source_titles: transcripts.map((item) => item.title),
-    source_videos: transcripts.map((item) => item.url).filter(Boolean),
+    source_videos: transcripts.map((item) => ({
+      url: item.url,
+      date: now,
+    })).filter((sv) => sv.url),
     generated_at: now,
     built_at: now,
+    last_updated: now,
     frameworks: Array.isArray(result.frameworks) ? result.frameworks : [],
     tactics: Array.isArray(result.tactics) ? result.tactics : [],
     quotes: Array.isArray(result.quotes) ? result.quotes : [],
@@ -168,6 +174,13 @@ function normalizeSynthesis(result, transcripts) {
     processes: Array.isArray(result.processes) ? result.processes : [],
     full_notes: Array.isArray(result.full_notes) ? result.full_notes : [],
   };
+
+  if (creatorMeta?.creator) {
+    normalized.creator = creatorMeta.creator;
+    normalized.creator_slug = creatorMeta.creatorSlug || slugifyCreator(creatorMeta.creator);
+  }
+
+  return normalized;
 }
 
 function inferProvider(model) {
@@ -267,7 +280,11 @@ async function callProvider(prompt, model) {
   return synthesizeWithOpenAI(prompt, model);
 }
 
-async function synthesizeKnowledge({ transcripts, topic, model, intent, outputPath }) {
+async function callProviderRaw(prompt, model = "claude-sonnet-4-20250514") {
+  return callProvider(prompt, model);
+}
+
+async function synthesizeKnowledge({ transcripts, topic, model, intent, outputPath, creatorMeta }) {
   if (!Array.isArray(transcripts) || transcripts.length === 0) {
     throw new Error("At least one transcript is required for synthesis.");
   }
@@ -279,10 +296,10 @@ async function synthesizeKnowledge({ transcripts, topic, model, intent, outputPa
   if (checkpoint?.result) {
     console.log("[SkillForge] Resuming from checkpoint:", slug, "(step:", checkpoint.step || "synthesize", ")");
     await removeCheckpoint(slug);
-    const normalized = normalizeSynthesis(checkpoint.result, transcripts);
+    const normalized = normalizeSynthesis(checkpoint.result, transcripts, creatorMeta);
     // Save to skill index
     if (intent) {
-      await skillIndex.add({
+      const indexEntry = {
         name: normalized.topic,
         slug,
         domain: normalized.topic,
@@ -292,7 +309,14 @@ async function synthesizeKnowledge({ transcripts, topic, model, intent, outputPa
         filePath: outputPath || "",
         createdAt: normalized.generated_at,
         builtAt: normalized.built_at,
-      });
+      };
+      if (creatorMeta?.creator) {
+        indexEntry.creator = creatorMeta.creator;
+        indexEntry.creatorSlug = creatorMeta.creatorSlug;
+        indexEntry.compositeSlug = `${creatorMeta.creatorSlug}/${slug}`;
+        indexEntry.sourceVideos = normalized.source_videos;
+      }
+      await skillIndex.add(indexEntry);
     }
     return normalized;
   }
@@ -369,11 +393,11 @@ async function synthesizeKnowledge({ transcripts, topic, model, intent, outputPa
   // Save checkpoint before normalization
   await saveCheckpoint(slug, { result });
 
-  const normalized = normalizeSynthesis(result, transcripts);
+  const normalized = normalizeSynthesis(result, transcripts, creatorMeta);
 
   // Save to skill index if intent was provided
   if (intent) {
-    await skillIndex.add({
+    const indexEntry = {
       name: normalized.topic,
       slug,
       domain: normalized.topic,
@@ -382,7 +406,14 @@ async function synthesizeKnowledge({ transcripts, topic, model, intent, outputPa
       intent,
       filePath: outputPath || "",
       createdAt: normalized.generated_at,
-    });
+    };
+    if (creatorMeta?.creator) {
+      indexEntry.creator = creatorMeta.creator;
+      indexEntry.creatorSlug = creatorMeta.creatorSlug;
+      indexEntry.compositeSlug = `${creatorMeta.creatorSlug}/${slug}`;
+      indexEntry.sourceVideos = normalized.source_videos;
+    }
+    await skillIndex.add(indexEntry);
   }
 
   // Clean up checkpoint on success
@@ -391,6 +422,35 @@ async function synthesizeKnowledge({ transcripts, topic, model, intent, outputPa
   return normalized;
 }
 
+async function previewTranscript({ transcript, topic, model = "claude-sonnet-4-20250514" }) {
+  const truncated = chunkText(transcript, 12000)[0];
+  const prompt = `
+You are previewing a YouTube video transcript to help a user decide if it's worth extracting into an agent skill.
+
+Topic hint: ${topic || "none provided"}
+
+Return strict JSON only with this exact schema:
+{
+  "bullets": ["string"]
+}
+
+Requirements:
+- Provide 3-5 bullet points.
+- Each bullet should be one concise sentence.
+- Cover: what the video is about, key takeaways, and what an AI agent would learn from it.
+- Be specific — reference actual concepts, frameworks, or tactics mentioned.
+- If the content is low-quality or off-topic, say so honestly.
+
+Transcript:
+${truncated}
+`.trim();
+
+  const result = await callProvider(prompt, model);
+  return { bullets: Array.isArray(result.bullets) ? result.bullets : [] };
+}
+
 export {
   synthesizeKnowledge,
+  previewTranscript,
+  callProviderRaw,
 };
