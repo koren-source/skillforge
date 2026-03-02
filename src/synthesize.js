@@ -5,6 +5,7 @@ import process from "node:process";
 import Anthropic from "@anthropic-ai/sdk";
 import * as skillIndex from "./skillIndex.js";
 import { slugify, slugifyCreator } from "./format.js";
+import { isOAuthToken, getAuthErrorMessage, checkAuth } from "./auth.js";
 
 const CHECKPOINT_DIR = path.join(os.homedir(), ".skillforge", "checkpoints");
 
@@ -198,48 +199,76 @@ function inferProvider(model) {
 }
 
 async function synthesizeWithAnthropic(prompt, model) {
-  if (!process.env.ANTHROPIC_API_KEY) {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+
+  if (!apiKey) {
+    const auth = await checkAuth();
     throw new Error(
-      "Missing ANTHROPIC_API_KEY. Add it to your environment or use an OpenAI model with OPENAI_API_KEY."
+      "Missing ANTHROPIC_API_KEY.\n\n" + getAuthErrorMessage(auth)
+    );
+  }
+
+  // Check for OAuth tokens before making the API call
+  if (isOAuthToken(apiKey)) {
+    const auth = await checkAuth();
+    throw new Error(
+      "Invalid ANTHROPIC_API_KEY: OAuth token detected.\n\n" + getAuthErrorMessage(auth)
     );
   }
 
   const client = new Anthropic({
-    apiKey: process.env.ANTHROPIC_API_KEY,
+    apiKey,
   });
 
-  const response = await client.messages.create({
-    model,
-    max_tokens: 4096,
-    temperature: 0.2,
-    messages: [
-      {
-        role: "user",
-        content: prompt,
-      },
-    ],
-  });
+  try {
+    const response = await client.messages.create({
+      model,
+      max_tokens: 4096,
+      temperature: 0.2,
+      messages: [
+        {
+          role: "user",
+          content: prompt,
+        },
+      ],
+    });
 
-  const text = response.content
-    .filter((block) => block.type === "text")
-    .map((block) => block.text)
-    .join("\n");
+    const text = response.content
+      .filter((block) => block.type === "text")
+      .map((block) => block.text)
+      .join("\n");
 
-  return JSON.parse(extractJson(text));
+    return JSON.parse(extractJson(text));
+  } catch (err) {
+    // Catch auth errors and provide helpful messages
+    if (err.status === 401 || err.message?.includes("authentication")) {
+      const auth = await checkAuth();
+      throw new Error(
+        `Anthropic API authentication failed: ${err.message}\n\n` + getAuthErrorMessage(auth)
+      );
+    }
+    throw err;
+  }
 }
 
 async function synthesizeWithOpenAI(prompt, model) {
-  if (!process.env.OPENAI_API_KEY) {
+  const apiKey = process.env.OPENAI_API_KEY;
+
+  if (!apiKey) {
+    const auth = await checkAuth();
     throw new Error(
-      "Missing OPENAI_API_KEY. Add it to your environment or switch to an Anthropic model with ANTHROPIC_API_KEY."
+      "Missing OPENAI_API_KEY.\n\n" + getAuthErrorMessage(auth)
     );
   }
 
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+  // Support custom OpenAI-compatible endpoints (LiteLLM, Ollama, etc.)
+  const baseUrl = process.env.OPENAI_BASE_URL || process.env.OPENAI_API_BASE || "https://api.openai.com/v1";
+
+  const response = await fetch(`${baseUrl}/chat/completions`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+      Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
       model,
@@ -260,6 +289,15 @@ async function synthesizeWithOpenAI(prompt, model) {
 
   if (!response.ok) {
     const errorText = await response.text();
+
+    // Provide helpful error for auth failures
+    if (response.status === 401) {
+      const auth = await checkAuth();
+      throw new Error(
+        `OpenAI API authentication failed: ${errorText}\n\n` + getAuthErrorMessage(auth)
+      );
+    }
+
     throw new Error(`OpenAI API request failed: ${response.status} ${errorText}`);
   }
 

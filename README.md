@@ -41,7 +41,66 @@ npm install -g skillforge
 You also need:
 
 - `yt-dlp` installed and available on your `PATH`
-- `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` in your environment
+- An API key (see setup below)
+
+## API Keys Setup
+
+SkillForge needs an AI API key to synthesize knowledge from transcripts. You bring your own keys.
+
+### Option 1: Anthropic API Key (Claude models)
+
+1. Go to [console.anthropic.com](https://console.anthropic.com)
+2. Create an API key (starts with `sk-ant-api03-`)
+3. Set it in your environment:
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-api03-...
+```
+
+Then use Claude models:
+```bash
+skillforge build --topic "meta ads" --model claude-sonnet-4-20250514
+```
+
+**Important:** Claude.ai OAuth tokens (`sk-ant-oat01-...`) do NOT work. Those are user-level web tokens, not API keys. You need a key from console.anthropic.com.
+
+### Option 2: OpenAI API Key
+
+1. Go to [platform.openai.com](https://platform.openai.com)
+2. Create an API key
+3. Set it in your environment:
+
+```bash
+export OPENAI_API_KEY=sk-...
+```
+
+Then use OpenAI models:
+```bash
+skillforge build --topic "meta ads" --model gpt-4o-mini
+```
+
+### Option 3: OpenAI-Compatible Proxy (LiteLLM, Ollama, etc.)
+
+If you're running a local proxy or gateway:
+
+```bash
+export OPENAI_BASE_URL=http://localhost:8000/v1
+export OPENAI_API_KEY=dummy  # Some proxies require this even if unused
+```
+
+Then use your proxy's model names:
+```bash
+skillforge build --topic "meta ads" --model my-local-model
+```
+
+### Verify Your Setup
+
+Run the auth check command to verify your configuration:
+
+```bash
+skillforge check-auth
+skillforge check-auth --validate  # Actually test the keys against APIs
+```
 
 ## Usage
 
@@ -223,16 +282,27 @@ To contribute a community skill:
 2. Add a high-signal `SKILL.md`
 3. Submit a pull request with the source context or rationale
 
-## API Keys
+## Troubleshooting
 
-SkillForge is the engine, not the model provider. You bring your own API keys so the project stays open, lightweight, and provider-flexible.
+### Authentication Errors
 
-Supported today:
+If you see `401 authentication_error`, run:
 
-- `ANTHROPIC_API_KEY` for Claude models, which are the default
-- `OPENAI_API_KEY` as a fallback when using an OpenAI model name like `gpt-4.1`
+```bash
+skillforge check-auth --validate
+```
 
-SkillForge never bundles proprietary model access. It uses your keys to synthesize knowledge from the transcripts it extracts.
+Common issues:
+- **OAuth token instead of API key**: Claude.ai tokens (`sk-ant-oat01-...`) don't work with the API. Get a key from [console.anthropic.com](https://console.anthropic.com).
+- **Expired or invalid key**: Regenerate your key from the console.
+- **No credits**: Check your account balance at the respective console.
+
+### yt-dlp Issues
+
+If transcripts fail to download:
+- Ensure `yt-dlp` is installed: `brew install yt-dlp` or `pip install yt-dlp`
+- Update to latest: `yt-dlp -U`
+- Some videos don't have subtitles available
 
 ## Built By
 

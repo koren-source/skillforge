@@ -28,6 +28,7 @@ import { scoreVideos } from "../src/score.js";
 import * as propose from "../src/propose.js";
 import * as skillIndex from "../src/skillIndex.js";
 import { loadConfig, addTrusted, removeTrusted, isTrusted } from "../src/config.js";
+import { checkAuth, getAuthErrorMessage } from "../src/auth.js";
 
 const program = new Command();
 
@@ -282,6 +283,87 @@ trust
         process.stdout.write(chalk.green(`Removed ${normalized} from trusted creators.\n`));
       } else {
         process.stdout.write(chalk.yellow(`Creator "${creator}" was not in the trusted list.\n`));
+      }
+    })
+  );
+
+// ── check-auth ────────────────────────────────────────────────────────
+program
+  .command("check-auth")
+  .description("Verify API key configuration")
+  .option("--validate", "Test keys against live APIs")
+  .action(
+    withErrorHandler(async (options) => {
+      const spinner = ora({ text: "Checking API configuration", color: "cyan" }).start();
+
+      const auth = await checkAuth({ validate: options.validate });
+
+      spinner.stop();
+
+      process.stdout.write(chalk.bold("SkillForge API Configuration\n\n"));
+
+      // Anthropic
+      process.stdout.write(chalk.bold("Anthropic:\n"));
+      if (!auth.anthropic.set) {
+        process.stdout.write(`  ${chalk.dim("ANTHROPIC_API_KEY:")} ${chalk.yellow("not set")}\n`);
+      } else if (auth.anthropic.isOAuthToken) {
+        process.stdout.write(`  ${chalk.dim("ANTHROPIC_API_KEY:")} ${chalk.red("OAuth token (not supported)")}\n`);
+        process.stdout.write(`  ${chalk.yellow(auth.anthropic.hint)}\n`);
+      } else if (auth.anthropic.valid === true) {
+        process.stdout.write(`  ${chalk.dim("ANTHROPIC_API_KEY:")} ${chalk.green("valid")}\n`);
+        if (auth.anthropic.warning) {
+          process.stdout.write(`  ${chalk.yellow(auth.anthropic.warning)}\n`);
+        }
+      } else if (auth.anthropic.valid === false) {
+        process.stdout.write(`  ${chalk.dim("ANTHROPIC_API_KEY:")} ${chalk.red(auth.anthropic.error)}\n`);
+        if (auth.anthropic.hint) {
+          process.stdout.write(`  ${chalk.yellow(auth.anthropic.hint)}\n`);
+        }
+      } else {
+        process.stdout.write(`  ${chalk.dim("ANTHROPIC_API_KEY:")} ${chalk.cyan("set (use --validate to test)")}\n`);
+      }
+
+      process.stdout.write("\n");
+
+      // OpenAI
+      process.stdout.write(chalk.bold("OpenAI:\n"));
+      if (!auth.openai.set) {
+        process.stdout.write(`  ${chalk.dim("OPENAI_API_KEY:")} ${chalk.yellow("not set")}\n`);
+      } else if (auth.openai.valid === true) {
+        process.stdout.write(`  ${chalk.dim("OPENAI_API_KEY:")} ${chalk.green("valid")}\n`);
+      } else if (auth.openai.valid === false) {
+        process.stdout.write(`  ${chalk.dim("OPENAI_API_KEY:")} ${chalk.red(auth.openai.error)}\n`);
+        if (auth.openai.hint) {
+          process.stdout.write(`  ${chalk.yellow(auth.openai.hint)}\n`);
+        }
+      } else {
+        process.stdout.write(`  ${chalk.dim("OPENAI_API_KEY:")} ${chalk.cyan("set (use --validate to test)")}\n`);
+      }
+
+      if (auth.proxy.configured) {
+        process.stdout.write(`  ${chalk.dim("Custom endpoint:")} ${auth.proxy.baseUrl}\n`);
+      }
+
+      process.stdout.write("\n");
+
+      // Summary
+      if (!auth.hasAnyKey) {
+        process.stdout.write(chalk.red("No API keys configured.\n\n"));
+        process.stdout.write(getAuthErrorMessage(auth));
+        process.stdout.write("\n");
+        process.exitCode = 1;
+      } else if (auth.anthropic.isOAuthToken && !auth.openai.set) {
+        process.stdout.write(chalk.red("No valid API keys configured.\n\n"));
+        process.stdout.write(getAuthErrorMessage(auth));
+        process.stdout.write("\n");
+        process.exitCode = 1;
+      } else {
+        process.stdout.write(chalk.green("Ready to synthesize knowledge.\n"));
+        if (auth.openai.set && !auth.anthropic.set) {
+          process.stdout.write(chalk.dim("Using OpenAI. Default model: gpt-4o-mini\n"));
+        } else if (auth.anthropic.set && !auth.anthropic.isOAuthToken) {
+          process.stdout.write(chalk.dim("Using Anthropic. Default model: gpt-4o-mini (or use --model claude-*)\n"));
+        }
       }
     })
   );
