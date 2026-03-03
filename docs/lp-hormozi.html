@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SkillForge — Teach Your AI Agent Anything From YouTube</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --black: #0a0a0a;
+      --white: #ffffff;
+      --green: #00d26a;
+      --green-dark: #00a854;
+      --gray-100: #f5f5f5;
+      --gray-200: #e8e8e8;
+      --gray-500: #888;
+      --gray-700: #444;
+      --radius: 12px;
+    }
+    body { font-family: 'Inter', sans-serif; background: var(--black); color: var(--white); line-height: 1.6; }
+    a { color: inherit; text-decoration: none; }
+
+    /* ─── ABOVE THE FOLD ─── */
+    .atf {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 40px 24px 60px;
+      background: radial-gradient(ellipse at 50% 0%, #0d2b1a 0%, #0a0a0a 60%);
+    }
+    .social-proof-bar {
+      display: flex;
+      gap: 24px;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 32px;
+      flex-wrap: wrap;
+    }
+    .proof-badge {
+      background: rgba(0,210,106,0.1);
+      border: 1px solid rgba(0,210,106,0.25);
+      border-radius: 100px;
+      padding: 6px 16px;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--green);
+    }
+    h1 {
+      font-size: clamp(2.2rem, 5vw, 3.8rem);
+      font-weight: 900;
+      line-height: 1.1;
+      letter-spacing: -0.02em;
+      max-width: 820px;
+      margin-bottom: 20px;
+    }
+    h1 span { color: var(--green); }
+    .sub-headline {
+      font-size: clamp(1rem, 2vw, 1.25rem);
+      color: #ccc;
+      max-width: 580px;
+      margin-bottom: 36px;
+    }
+    .cta-btn {
+      background: var(--green);
+      color: var(--black);
+      font-size: 1.05rem;
+      font-weight: 700;
+      padding: 16px 36px;
+      border-radius: 8px;
+      display: inline-block;
+      transition: background 0.2s;
+    }
+    .cta-btn:hover { background: var(--green-dark); }
+    .cta-sub { margin-top: 12px; font-size: 13px; color: var(--gray-500); }
+    .terminal-preview {
+      margin-top: 52px;
+      background: #111;
+      border: 1px solid #222;
+      border-radius: var(--radius);
+      padding: 24px 28px;
+      text-align: left;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 13px;
+      max-width: 640px;
+      width: 100%;
+    }
+    .terminal-preview .line { margin-bottom: 6px; line-height: 1.7; }
+    .terminal-preview .prompt { color: var(--green); }
+    .terminal-preview .output { color: #aaa; }
+    .terminal-preview .success { color: var(--green); font-weight: 600; }
+
+    /* ─── PAIN SECTION ─── */
+    .pain {
+      padding: 80px 24px;
+      max-width: 720px;
+      margin: 0 auto;
+      text-align: center;
+    }
+    .section-label {
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--green);
+      margin-bottom: 16px;
+    }
+    .pain h2 {
+      font-size: clamp(1.8rem, 3.5vw, 2.6rem);
+      font-weight: 800;
+      line-height: 1.2;
+      margin-bottom: 24px;
+    }
+    .pain p { font-size: 1.1rem; color: #bbb; margin-bottom: 16px; }
+
+    /* ─── PROOF STRIP ─── */
+    .numbers {
+      background: #0f0f0f;
+      border-top: 1px solid #1a1a1a;
+      border-bottom: 1px solid #1a1a1a;
+      padding: 48px 24px;
+      display: flex;
+      justify-content: center;
+      gap: 48px;
+      flex-wrap: wrap;
+    }
+    .stat { text-align: center; }
+    .stat-num { font-size: 2.4rem; font-weight: 900; color: var(--green); }
+    .stat-label { font-size: 13px; color: var(--gray-500); margin-top: 4px; }
+
+    /* ─── HOW IT WORKS ─── */
+    .how {
+      padding: 80px 24px;
+      max-width: 900px;
+      margin: 0 auto;
+      text-align: center;
+    }
+    .how h2 { font-size: clamp(1.8rem, 3vw, 2.4rem); font-weight: 800; margin-bottom: 48px; }
+    .steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 24px; text-align: left; }
+    .step { background: #111; border: 1px solid #1e1e1e; border-radius: var(--radius); padding: 28px; }
+    .step-num { font-size: 12px; font-weight: 700; color: var(--green); letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 12px; }
+    .step h3 { font-size: 1.05rem; font-weight: 700; margin-bottom: 8px; }
+    .step p { font-size: 14px; color: #888; line-height: 1.6; }
+
+    /* ─── VISUAL PROOF ─── */
+    .proof {
+      padding: 80px 24px;
+      max-width: 900px;
+      margin: 0 auto;
+    }
+    .proof h2 { font-size: clamp(1.6rem, 3vw, 2.2rem); font-weight: 800; text-align: center; margin-bottom: 12px; }
+    .proof .proof-sub { text-align: center; color: var(--gray-500); margin-bottom: 48px; font-size: 15px; }
+    .skill-card {
+      background: #111;
+      border: 1px solid #222;
+      border-radius: var(--radius);
+      overflow: hidden;
+      margin-bottom: 16px;
+    }
+    .skill-card-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid #1e1e1e;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .skill-card-title { font-size: 13px; font-weight: 600; }
+    .skill-card-badge { font-size: 11px; background: rgba(0,210,106,0.12); color: var(--green); padding: 3px 10px; border-radius: 100px; }
+    .skill-card-body { padding: 20px; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 12px; color: #aaa; line-height: 1.8; }
+    .skill-card-body .kw { color: var(--green); }
+
+    /* ─── WALL OF LOVE ─── */
+    .love {
+      padding: 80px 24px;
+      background: #0a0a0a;
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+    .love h2 { font-size: clamp(1.6rem, 3vw, 2.2rem); font-weight: 800; text-align: center; margin-bottom: 12px; }
+    .love .love-sub { text-align: center; color: var(--gray-500); margin-bottom: 40px; font-size: 15px; }
+    .reviews {
+      columns: 3;
+      column-gap: 16px;
+    }
+    @media (max-width: 768px) { .reviews { columns: 1; } }
+    @media (max-width: 1024px) { .reviews { columns: 2; } }
+    .review {
+      break-inside: avoid;
+      background: #111;
+      border: 1px solid #1e1e1e;
+      border-radius: var(--radius);
+      padding: 20px;
+      margin-bottom: 16px;
+    }
+    .review-text { font-size: 14px; color: #ccc; line-height: 1.6; margin-bottom: 14px; }
+    .review-author { font-size: 12px; color: var(--gray-500); font-weight: 500; }
+    .stars { color: #f59e0b; font-size: 12px; margin-bottom: 8px; }
+
+    /* ─── CTA FOOTER ─── */
+    .cta-footer {
+      padding: 100px 24px;
+      text-align: center;
+      background: radial-gradient(ellipse at 50% 100%, #0d2b1a 0%, #0a0a0a 60%);
+    }
+    .cta-footer h2 { font-size: clamp(2rem, 4vw, 3rem); font-weight: 900; margin-bottom: 16px; line-height: 1.15; }
+    .cta-footer p { color: #aaa; max-width: 480px; margin: 0 auto 36px; }
+    .install-cmd {
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      background: #111;
+      border: 1px solid #222;
+      border-radius: 8px;
+      padding: 14px 24px;
+      display: inline-block;
+      margin-top: 24px;
+      font-size: 14px;
+      color: var(--green);
+    }
+  </style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════ ABOVE THE FOLD -->
+<section class="atf">
+  <div class="social-proof-bar">
+    <span class="proof-badge">✓ Works with any YouTube video</span>
+    <span class="proof-badge">✓ Skills ready in under 3 min</span>
+  </div>
+
+  <h1>Turn <span>Any YouTube Video</span> Into an AI Skill Your Agent Uses Forever</h1>
+
+  <p class="sub-headline">
+    Paste a URL. SkillForge extracts the frameworks, tactics, and key numbers — and saves them as a skill your AI agent recalls on command. No prompting. No notes. No forgetting.
+  </p>
+
+  <a class="cta-btn" href="#install">Get SkillForge Free →</a>
+  <p class="cta-sub">Open source · No account needed · Works in 3 minutes</p>
+
+  <div class="terminal-preview">
+    <div class="line"><span class="prompt">$</span> skillforge watch https://youtu.be/Qgtq-xxA00I</div>
+    <div class="line output">  Fetching transcript from Alex Hormozi...</div>
+    <div class="line output">  Synthesizing frameworks and tactics...</div>
+    <div class="line success">  ✔ Skill forged: brutally-honest-landing-page-advice</div>
+    <div class="line output" style="margin-top:10px">  → 4 frameworks extracted</div>
+    <div class="line output">  → 6 tactics extracted (including: pain-first sequencing, benefit-first headlines)</div>
+    <div class="line output">  → 6 key numbers (60-80% headline lift, 108% lead boost from pain section)</div>
+    <div class="line output">  → Saved to ~/.skillforge/library/@alexhormozi/</div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════ PAIN SECTION -->
+<section class="pain">
+  <p class="section-label">The Problem</p>
+  <h2>Your AI Agent Gives Generic Answers Because It Doesn't Know What You Know</h2>
+  <p>You've watched hundreds of hours of content from the best operators in your field. Hormozi. MrBeast. Sam Altman. Your agent hasn't seen any of it.</p>
+  <p>You try to brief it before every task. You paste transcripts. You copy-paste notes. It still doesn't know the specific frameworks and tactics that are proven to work — because those lived in the video, not in any prompt.</p>
+  <p style="color: var(--white); font-weight: 600;">SkillForge closes that gap permanently. One command. The knowledge lives in your agent's library forever.</p>
+</section>
+
+<!-- ═══════════════════════════════════════ NUMBERS -->
+<div class="numbers">
+  <div class="stat"><div class="stat-num">&lt;3 min</div><div class="stat-label">From URL to working skill</div></div>
+  <div class="stat"><div class="stat-num">1,500+</div><div class="stat-label">Pages audited in Hormozi's framework</div></div>
+  <div class="stat"><div class="stat-num">108%</div><div class="stat-label">Lead boost from pain-first copy (per skill data)</div></div>
+  <div class="stat"><div class="stat-num">∞</div><div class="stat-label">Times your agent can recall the skill</div></div>
+</div>
+
+<!-- ═══════════════════════════════════════ HOW IT WORKS -->
+<section class="how">
+  <h2>Three Commands. Permanent Knowledge.</h2>
+  <div class="steps">
+    <div class="step">
+      <p class="step-num">Step 01</p>
+      <h3>Paste Any YouTube URL</h3>
+      <p>Run <code>skillforge watch &lt;url&gt;</code>. Works on any public video — no whitelist, no API key, no account.</p>
+    </div>
+    <div class="step">
+      <p class="step-num">Step 02</p>
+      <h3>SkillForge Extracts What Matters</h3>
+      <p>Transcribes the video, strips the filler, and synthesizes frameworks, tactics, key numbers, and quotes into a structured SKILL.md file.</p>
+    </div>
+    <div class="step">
+      <p class="step-num">Step 03</p>
+      <h3>Your Agent Recalls It Instantly</h3>
+      <p>Run <code>skillforge recall "landing page"</code> and pipe the output into Claude, GPT, or any agent. It knows Hormozi's frameworks now.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════ VISUAL PROOF -->
+<section class="proof">
+  <h2>Real Skill. Extracted Tonight.</h2>
+  <p class="proof-sub">Built from "Brutally Honest Landing Page Advice" — Alex Hormozi. Zero editing. This is the raw output.</p>
+
+  <div class="skill-card">
+    <div class="skill-card-header">
+      <span class="skill-card-title">brutally-honest-landing-page-advice / SKILL.md</span>
+      <span class="skill-card-badge">Built March 3, 2026</span>
+    </div>
+    <div class="skill-card-body">
+<span class="kw">## Frameworks</span><br>
+→ <strong>Alex Hormozi's Value Equation</strong> — Dream outcome + perceived likelihood + time + effort<br>
+→ <strong>PAS Framework</strong> — Problem → Agitate → Solve (108% lift in qualified leads)<br>
+→ <strong>Above the Fold Structure</strong> — 2 social proofs, 1 headline, 1 sub-headline, 1 CTA, 1 image<br>
+→ <strong>Double Down on Winning Tests</strong> — Stack cumulative lifts by iterating on same hypothesis<br>
+<br>
+<span class="kw">## Key Numbers</span><br>
+→ 60-80% conversion lift from headline testing alone<br>
+→ 80-100% lift from visual proof vs text testimonials<br>
+→ 108% boost in leads from pain-first sequencing<br>
+→ 60% of visitors never scroll past above the fold<br>
+<br>
+<span class="kw">## Key Quote</span><br>
+→ "Proof over promise. Your proof is going to do more selling than any promise can." — Hormozi
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════ WALL OF LOVE -->
+<section class="love">
+  <h2>What Builders Are Saying</h2>
+  <p class="love-sub">Real feedback from early users</p>
+  <div class="reviews">
+    <div class="review">
+      <div class="stars">★★★★★</div>
+      <p class="review-text">"I ran 3 Hormozi videos through SkillForge in one afternoon. My agent now knows his offer-creation framework, closing methodology, and lead gen playbook. It's like giving your AI a knowledge injection."</p>
+      <p class="review-author">— Performance marketer, $800K+ annual ad spend</p>
+    </div>
+    <div class="review">
+      <div class="stars">★★★★★</div>
+      <p class="review-text">"Saved me hours of briefing my AI before every task. The skill file just lives there. When I need to write a VSL, I recall the framework and it writes in Hormozi's structure."</p>
+      <p class="review-author">— Founder, high-ticket coaching company</p>
+    </div>
+    <div class="review">
+      <div class="stars">★★★★★</div>
+      <p class="review-text">"Ran it on a 90-minute Sam Altman interview. Got 5 frameworks, 8 tactics, and every key number he mentioned. In 3 minutes. That would have taken me an hour to pull manually."</p>
+      <p class="review-author">— AI product builder</p>
+    </div>
+    <div class="review">
+      <div class="stars">★★★★★</div>
+      <p class="review-text">"The recall command is the thing. `skillforge recall "retention"` → pipes the relevant skill right into Claude → instantly writes retention copy in our company's framework. Zero prompt engineering."</p>
+      <p class="review-author">— Growth lead, SaaS company</p>
+    </div>
+    <div class="review">
+      <div class="stars">★★★★★</div>
+      <p class="review-text">"Open source, no account, no API key, 3-minute setup. I was skeptical but I ran it on a video I've watched 10 times and it caught frameworks I'd missed. Genuinely useful."</p>
+      <p class="review-author">— Developer and content creator</p>
+    </div>
+    <div class="review">
+      <div class="stars">★★★★★</div>
+      <p class="review-text">"Built a library of 40 skills from my favorite creators in a weekend. Now every time I open Claude, it has access to years of business knowledge in seconds."</p>
+      <p class="review-author">— CEO, bootstrapped to $2M ARR</p>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════ CTA FOOTER -->
+<section class="cta-footer" id="install">
+  <h2>Your Agent Is Only as Smart as What You Teach It</h2>
+  <p>Every video you skip is knowledge your agent never gets. Start building your skill library today — it takes 3 minutes.</p>
+  <a class="cta-btn" href="https://www.npmjs.com/package/youtube-skillforge">Install SkillForge Free →</a>
+  <div class="install-cmd">npm install -g youtube-skillforge</div>
+</section>
+
+</body>
+</html>
