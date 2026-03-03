@@ -1,3 +1,8 @@
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import chalk from "chalk";
+
 function slugify(input) {
   return String(input || "skillforge")
     .toLowerCase()
@@ -30,7 +35,7 @@ function formatSkill(data) {
   const sourceTitle = data.source_titles?.[0] || "YouTube Video";
   const creatorPart = data.creator ? `${data.creator} — ` : "";
   const datePart = formatDate(data.built_at || data.generated_at);
-  const modelPart = data.model || "claude-sonnet-4-5";
+  const modelPart = data.model || "unknown";
 
   const frameworks = data.frameworks
     .map((framework) => {
@@ -219,7 +224,7 @@ function formatDocument(format, data) {
 
 function makeOutputFilename(format, topicSlug) {
   if (format === "skill") {
-    return `${topicSlug}.skill.md`;
+    return path.join(topicSlug, "SKILL.md");
   }
 
   if (format === "markdown") {
@@ -233,8 +238,68 @@ function makeOutputFilename(format, topicSlug) {
   throw new Error(`Unsupported format: ${format}`);
 }
 
+function displayPath(targetPath) {
+  const home = os.homedir();
+  if (targetPath === home) return "~";
+  if (targetPath.startsWith(`${home}${path.sep}`)) {
+    return `~${path.sep}${path.relative(home, targetPath)}`;
+  }
+  return targetPath;
+}
+
+function sortEntries(entries) {
+  return [...entries]
+    .filter((entry) => entry.name !== ".DS_Store")
+    .sort((a, b) => {
+      if (a.isDirectory() !== b.isDirectory()) {
+        return a.isDirectory() ? -1 : 1;
+      }
+      return a.name.localeCompare(b.name);
+    });
+}
+
+async function renderTreeLines(dirPath, prefix = "") {
+  const entries = sortEntries(await fs.readdir(dirPath, { withFileTypes: true }));
+  const lines = [];
+
+  for (const [index, entry] of entries.entries()) {
+    const isLast = index === entries.length - 1;
+    const connector = isLast ? "└──" : "├──";
+    const entryPath = path.join(dirPath, entry.name);
+    const label = entry.isDirectory()
+      ? chalk.cyan(`${entry.name}/`)
+      : chalk.white(entry.name);
+
+    lines.push(`${prefix}${connector} ${label}`);
+
+    if (entry.isDirectory()) {
+      const childPrefix = `${prefix}${isLast ? "    " : "│   "}`;
+      lines.push(...await renderTreeLines(entryPath, childPrefix));
+    }
+  }
+
+  return lines;
+}
+
+async function formatSkillTree(skillPath) {
+  const absolutePath = path.resolve(skillPath);
+  const stats = await fs.stat(absolutePath);
+
+  if (stats.isDirectory()) {
+    const treeLines = await renderTreeLines(absolutePath);
+    return [chalk.green(`${displayPath(absolutePath)}/`), ...treeLines].join("\n");
+  }
+
+  const parentDir = path.dirname(absolutePath);
+  return [
+    chalk.green(`${displayPath(parentDir)}/`),
+    `└── ${chalk.white(path.basename(absolutePath))}`,
+  ].join("\n");
+}
+
 export {
   formatDocument,
+  formatSkillTree,
   makeOutputFilename,
   slugify,
   slugifyCreator,

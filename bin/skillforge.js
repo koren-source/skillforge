@@ -19,16 +19,19 @@ import { searchTopic } from "../src/search.js";
 import { synthesizeKnowledge } from "../src/synthesize.js";
 import {
   formatDocument,
+  formatSkillTree,
   makeOutputFilename,
   slugify,
   slugifyCreator,
 } from "../src/format.js";
+import { shareSkill } from "../src/share.js";
 import { resolveCreator } from "../src/creator.js";
 import { scoreVideos } from "../src/score.js";
 import * as propose from "../src/propose.js";
 import * as skillIndex from "../src/skillIndex.js";
 import { loadConfig, addTrusted, removeTrusted } from "../src/config.js";
 import { checkAuth, getAuthErrorMessage } from "../src/auth.js";
+import { getDefaultModel, getProviderName } from "../src/provider.js";
 
 const program = new Command();
 
@@ -119,6 +122,23 @@ function resolveDestination(outputPath, format, topic) {
 async function writeOutput(filePath, content) {
   await ensureDirectory(path.dirname(filePath));
   await fs.writeFile(filePath, content, "utf8");
+}
+
+async function printForgeConfirmation({ destination, creator, videoCount, sourceUrls = [] }) {
+  process.stdout.write(`\n${chalk.bold("Skill forged successfully!")}\n\n`);
+  process.stdout.write(`${await formatSkillTree(destination)}\n\n`);
+
+  if (creator) {
+    process.stdout.write(`${chalk.green("Creator:")} ${creator}\n`);
+  }
+  process.stdout.write(`${chalk.green("Videos:")} ${videoCount}\n`);
+
+  if (sourceUrls.length) {
+    process.stdout.write(`${chalk.green("Sources:")}\n`);
+    for (const url of sourceUrls) {
+      process.stdout.write(`  ${chalk.dim(url)}\n`);
+    }
+  }
 }
 
 async function gatherSourceItems(source, limit) {
@@ -290,11 +310,12 @@ trust
 // ── check-auth ────────────────────────────────────────────────────────
 program
   .command("check-auth")
-  .description("Verify Claude CLI is installed and authenticated")
+  .description("Verify provider is installed and authenticated")
   .option("--validate", "Test authentication with a live API call")
   .action(
     withErrorHandler(async (options) => {
-      const spinner = ora({ text: "Checking Claude CLI", color: "cyan" }).start();
+      const providerName = getProviderName();
+      const spinner = ora({ text: `Checking ${providerName}`, color: "cyan" }).start();
 
       const auth = await checkAuth({ validate: options.validate });
 
@@ -302,14 +323,13 @@ program
 
       process.stdout.write(chalk.bold("SkillForge Authentication\n\n"));
 
-      // Claude CLI status
-      process.stdout.write(chalk.bold("Claude CLI:\n"));
+      process.stdout.write(chalk.bold(`Provider: ${providerName}\n`));
 
       if (!auth.installed) {
         process.stdout.write(`  ${chalk.dim("Status:")} ${chalk.red("not installed")}\n`);
         process.stdout.write(`  ${chalk.yellow(auth.hint)}\n`);
         process.stdout.write("\n");
-        process.stdout.write(chalk.red("Claude CLI required.\n\n"));
+        process.stdout.write(chalk.red(`${providerName} required.\n\n`));
         process.stdout.write(getAuthErrorMessage(auth));
         process.stdout.write("\n");
         process.exitCode = 1;
@@ -321,15 +341,15 @@ program
       if (auth.authenticated === null && !options.validate) {
         process.stdout.write(`  ${chalk.dim("Authenticated:")} ${chalk.cyan("use --validate to test")}\n`);
         process.stdout.write("\n");
-        process.stdout.write(chalk.green("Claude CLI found. Run with --validate to test authentication.\n"));
+        process.stdout.write(chalk.green(`${providerName} found. Run with --validate to test authentication.\n`));
         return;
       }
 
       if (auth.authenticated) {
         process.stdout.write(`  ${chalk.dim("Authenticated:")} ${chalk.green("yes")}\n`);
         process.stdout.write("\n");
-        process.stdout.write(chalk.green("Claude CLI authenticated and working.\n"));
-        process.stdout.write(chalk.dim("Default model: claude-sonnet-4-5\n"));
+        process.stdout.write(chalk.green(`${providerName} authenticated and working.\n`));
+        process.stdout.write(chalk.dim(`Default model: ${getDefaultModel()}\n`));
       } else {
         process.stdout.write(`  ${chalk.dim("Authenticated:")} ${chalk.red("no")}\n`);
         if (auth.error) {
@@ -541,8 +561,7 @@ program
   )
   .option(
     "--model <model>",
-    "AI model to use",
-    "claude-sonnet-4-5"
+    "AI model to use"
   )
   .action(
     withErrorHandler(async (url, options) => {
@@ -683,11 +702,22 @@ program
       if (detectedCreator && !channelSources) {
         const creatorSlug = slugifyCreator(detectedCreator);
         creatorMeta = { creator: detectedCreator, creatorSlug };
-        destination = path.join(os.homedir(), ".skillforge", "library", creatorSlug, `${safeTopic}.skill.md`);
+        destination = path.join(os.homedir(), ".skillforge", "library", creatorSlug, safeTopic, "SKILL.md");
 
         // Merge: load existing source URLs and re-fetch cached transcripts
+        // Check v2 folder path first, fall back to v1 flat file
+        let mergeSource = destination;
         try {
-          const existingContent = await fs.readFile(destination, "utf8");
+          await fs.access(destination);
+        } catch {
+          const legacyDest = path.join(os.homedir(), ".skillforge", "library", creatorSlug, `${safeTopic}.skill.md`);
+          try {
+            await fs.access(legacyDest);
+            mergeSource = legacyDest;
+          } catch { /* no existing file */ }
+        }
+        try {
+          const existingContent = await fs.readFile(mergeSource, "utf8");
           const existingUrls = [];
           let inSV = false;
           for (const line of existingContent.split("\n")) {
@@ -736,31 +766,13 @@ program
 
       await writeOutput(destination, content);
 
-      spinner.succeed(`SkillForge output saved to ${destination}`);
-
-      if (detectedCreator) {
-        process.stdout.write(
-          `${chalk.green("Creator:")} ${detectedCreator}\n`
-        );
-      }
-      process.stdout.write(
-        `${chalk.green("Processed transcripts:")} ${transcripts.length}\n`
-      );
-      process.stdout.write(
-        `${chalk.green("Format:")} ${options.format} | ${chalk.green(
-          "Model:"
-        )} ${options.model}\n`
-      );
-      if (intent) {
-        process.stdout.write(
-          `${chalk.green("Indexed with intent:")} ${intent}\n`
-        );
-      }
-      if (channelSources) {
-        process.stdout.write(
-          `${chalk.green("Sources:")} ${channelSources.join(", ")}\n`
-        );
-      }
+      spinner.succeed("Skill forged successfully!");
+      await printForgeConfirmation({
+        destination,
+        creator: detectedCreator,
+        videoCount: transcripts.length,
+        sourceUrls: transcripts.map((t) => t.url).filter(Boolean),
+      });
     })
   );
 
@@ -769,7 +781,7 @@ program
   .command("watch <url>")
   .description("Build a skill document from a single YouTube video")
   .option("--skill <topic>", "Topic slug for the skill (enables creator-scoped library path)")
-  .option("--model <model>", "AI model to use", "claude-sonnet-4-5")
+  .option("--model <model>", "AI model to use")
   .option("--output <path>", "Where to save the generated output", "./output")
   .option("--format <format>", "Output format: skill, markdown, or json", "skill")
   .option("--intent <intent>", "Intent string for skill indexing")
@@ -798,11 +810,22 @@ program
       if (detectedCreator) {
         const creatorSlug = slugifyCreator(detectedCreator);
         creatorMeta = { creator: detectedCreator, creatorSlug };
-        destination = path.join(os.homedir(), ".skillforge", "library", creatorSlug, `${safeTopic}.skill.md`);
+        destination = path.join(os.homedir(), ".skillforge", "library", creatorSlug, safeTopic, "SKILL.md");
 
         // Merge: load existing source URLs and re-fetch cached transcripts
+        // Check v2 folder path first, fall back to v1 flat file
+        let watchMergeSource = destination;
         try {
-          const existingContent = await fs.readFile(destination, "utf8");
+          await fs.access(destination);
+        } catch {
+          const legacyDest = path.join(os.homedir(), ".skillforge", "library", creatorSlug, `${safeTopic}.skill.md`);
+          try {
+            await fs.access(legacyDest);
+            watchMergeSource = legacyDest;
+          } catch { /* no existing file */ }
+        }
+        try {
+          const existingContent = await fs.readFile(watchMergeSource, "utf8");
           const existingUrls = [];
           let inSV = false;
           for (const line of existingContent.split("\n")) {
@@ -842,13 +865,13 @@ program
       const content = formatDocument(options.format, synthesis);
       await writeOutput(destination, content);
 
-      const frameworkCount = synthesis.frameworks?.length || 0;
-      spinner.succeed(videoTitle);
-      if (detectedCreator) {
-        process.stdout.write(`  ${chalk.dim("Creator:")} ${detectedCreator}\n`);
-      }
-      process.stdout.write(`  ${chalk.dim("Frameworks:")} ${frameworkCount} | ${chalk.dim("Model:")} ${options.model}\n`);
-      process.stdout.write(`  ${chalk.dim("Saved:")} ${destination}\n`);
+      spinner.succeed("Skill forged successfully!");
+      await printForgeConfirmation({
+        destination,
+        creator: detectedCreator,
+        videoCount: transcripts.length,
+        sourceUrls: transcripts.map((t) => t.url).filter(Boolean),
+      });
     })
   );
 
@@ -932,6 +955,38 @@ program
         }
         process.stdout.write("\n");
       }
+    })
+  );
+
+// ── share ─────────────────────────────────────────────────────────────
+program
+  .command("share <skill>")
+  .description("Share a skill with attribution")
+  .option(
+    "-o, --output <path>",
+    "Output directory for shared skill",
+    process.cwd()
+  )
+  .option("--stdout", "Print shared skill to stdout instead of copying")
+  .action(
+    withErrorHandler(async (skill, options) => {
+      const spinner = ora({ text: "Preparing shared skill", color: "cyan" }).start();
+      const shared = await shareSkill({
+        skillRef: skill,
+        outputDir: options.output,
+        stdout: options.stdout,
+      });
+
+      if (options.stdout) {
+        spinner.succeed("Shared skill printed to stdout");
+        process.stdout.write(`${shared.stdout}\n`);
+        return;
+      }
+
+      spinner.succeed("Skill shared successfully!");
+      process.stdout.write(`${chalk.green("Shared by:")} ${shared.sharedBy}\n`);
+      process.stdout.write(`${chalk.green("Sourced from:")} ${shared.sourcedFrom}\n`);
+      process.stdout.write(`${chalk.green("Output:")} ${shared.outputPath}\n`);
     })
   );
 

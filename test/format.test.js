@@ -55,8 +55,8 @@ describe("makeOutputFilename", () => {
     assert.equal(makeOutputFilename("json", "my-topic"), "my-topic.json");
   });
 
-  it("returns topic.skill.md for skill format", () => {
-    assert.equal(makeOutputFilename("skill", "my-topic"), "my-topic.skill.md");
+  it("returns topic/SKILL.md for skill format", () => {
+    assert.equal(makeOutputFilename("skill", "my-topic"), "my-topic/SKILL.md");
   });
 
   it("throws for unsupported format", () => {

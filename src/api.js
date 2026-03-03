@@ -49,6 +49,10 @@ function loadExistingSkillMeta(filePath) {
 }
 
 function resolveLibraryPath(creatorSlug, topicSlug) {
+  return path.join(LIBRARY_DIR, creatorSlug, topicSlug, "SKILL.md");
+}
+
+function legacyLibraryPath(creatorSlug, topicSlug) {
   return path.join(LIBRARY_DIR, creatorSlug, `${topicSlug}.skill.md`);
 }
 
@@ -69,7 +73,7 @@ export async function build({
   topic,
   intent,
   auto = false,
-  model = "claude-sonnet-4-5",
+  model,
   output = "./output",
   format = "skill",
   limit = 10,
@@ -136,8 +140,12 @@ export async function build({
     creatorMeta = { creator: detectedCreator, creatorSlug };
     destination = resolveLibraryPath(creatorSlug, safeTopic);
 
-    // Merge: if existing skill file, fetch previous sources and re-synthesize all
-    const existing = loadExistingSkillMeta(destination);
+    // Merge: check v2 path first, fall back to v1 legacy path
+    let existingMeta = loadExistingSkillMeta(destination);
+    if (existingMeta.sourceVideoUrls.length === 0) {
+      existingMeta = loadExistingSkillMeta(legacyLibraryPath(creatorSlug, safeTopic));
+    }
+    const existing = existingMeta;
     if (existing.sourceVideoUrls.length > 0) {
       const newUrls = new Set(transcripts.map((t) => t.url));
       const missingUrls = existing.sourceVideoUrls.filter((u) => !newUrls.has(u));
@@ -181,7 +189,7 @@ export async function build({
 export async function watch({
   url,
   skill,
-  model = "claude-sonnet-4-5",
+  model,
   output = "./output",
   format = "skill",
   intent,
@@ -217,8 +225,12 @@ export async function watch({
     creatorMeta = { creator: detectedCreator, creatorSlug };
     destination = resolveLibraryPath(creatorSlug, safeTopic);
 
-    // Merge: if existing skill file, fetch cached transcripts and re-synthesize all
-    const existing = loadExistingSkillMeta(destination);
+    // Merge: check v2 path first, fall back to v1 legacy path
+    let existingWatchMeta = loadExistingSkillMeta(destination);
+    if (existingWatchMeta.sourceVideoUrls.length === 0) {
+      existingWatchMeta = loadExistingSkillMeta(legacyLibraryPath(creatorSlug, safeTopic));
+    }
+    const existing = existingWatchMeta;
     if (existing.sourceVideoUrls.length > 0) {
       const newUrls = new Set(transcripts.map((t) => t.url));
       const missingUrls = existing.sourceVideoUrls.filter((u) => !newUrls.has(u));

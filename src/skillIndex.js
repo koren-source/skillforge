@@ -89,7 +89,15 @@ async function search(intent) {
       if (entry.filePath) {
         try {
           skillContent = (await fs.readFile(entry.filePath, "utf8")).slice(0, 3000);
-        } catch { /* file missing, skip */ }
+        } catch {
+          // v1 path may reference a flat file that's now a folder — try SKILL.md inside
+          if (entry.filePath.endsWith(".skill.md")) {
+            const v2Path = entry.filePath.replace(/\.skill\.md$/, "/SKILL.md");
+            try {
+              skillContent = (await fs.readFile(v2Path, "utf8")).slice(0, 3000);
+            } catch { /* file missing, skip */ }
+          }
+        }
       }
 
       const haystack = (indexText + " " + skillContent).toLowerCase();
