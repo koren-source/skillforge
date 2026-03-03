@@ -1,5 +1,5 @@
 {
-  "name": "skillforge",
+  "name": "youtube-skillforge",
   "version": "4.1.0",
   "exports": {
     ".": "./src/api.js"
