@@ -52,8 +52,6 @@
       .compound-callout { background: #0a0f0a; border: 1px solid #1a3a1a; border-radius: 12px; padding: 1.25rem 1.5rem; text-align: center; font-size: 0.9rem; color: #aaa; line-height: 1.6; }
       .compound-callout strong { color: #4ade80; }
       .spec-line { font-size: 0.78rem; color: #555; margin: 0.5rem 0 0; letter-spacing: 0.02em; }
-      .coming-soon-badge { display:inline-block; font-size:0.65rem; font-weight:700; background:#1a2a1a; color:#4ade80; border:1px solid #2a4a2a; border-radius:4px; padding:0.1em 0.4em; vertical-align:middle; margin-left:0.4em; text-transform:uppercase; letter-spacing:0.06em; }
-      .feature-card--coming-soon { opacity: 0.85; border-style: dashed; }
     </style>
   </head>
   <body>
@@ -109,8 +107,8 @@
             <article class="feature-card"><h3>Any creator, any video</h3><p>Paste any YouTube URL and SkillForge extracts the sharpest frameworks. No trusted-creator lists, no approvals — just paste and go.</p></article>
             <article class="feature-card"><h3>Intent-first intelligence</h3><p>Not a dump of everything. SkillForge filters for exactly what matters to your next task.</p></article>
             <article class="feature-card"><h3>Compounds over time</h3><p>Watch the same creator over time and skills compound — new videos merge in, nothing overwrites. Your agent gets sharper with every session.</p></article>
-            <article class="feature-card"><h3>Creator-organized library</h3><p>Skills live at <code>~/.skillforge/library/@creator/topic.skill.md</code> — full attribution, provenance, and source videos tracked in every file.</p></article>
-            <article class="feature-card"><h3>MCP server built in</h3><p>Run <code>skillforge serve</code> to expose your library as an MCP server. OpenClaw, Claude Desktop, and any MCP-compatible agent can query skills on demand.</p></article>
+            <article class="feature-card"><h3>Creator-organized library</h3><p>Skills live at <code>~/.skillforge/library/@creator/topic/SKILL.md</code> — full attribution, provenance, and source videos tracked in every folder.</p></article>
+            <article class="feature-card"><h3>MCP server built in</h3><p>Run <code>skillforge serve</code> to expose your library as an MCP server. Any MCP-compatible agent can query skills on demand.</p></article>
             <article class="feature-card"><h3>Long-form video ready</h3><p>Handles podcasts, lectures, and deep-dives up to 4+ hours. Every minute gets read — nothing skipped.</p></article>
           </div>
         </section>
@@ -225,7 +223,7 @@ memory:
               <code>npm install -g skillforge</code>
               <button class="copy-btn" onclick="copyCode(this,'npm install -g skillforge')">Copy</button>
             </div>
-            <p class="step-hint">Also set <em>ANTHROPIC_API_KEY</em> or <em>OPENAI_API_KEY</em> in your environment.</p>
+            <p class="step-hint">Set <em>SKILLFORGE_PROVIDER</em> to <em>anthropic</em> or <em>openai</em> with the matching API key, or use <em>claude-cli</em> (default).</p>
           </li>
           <li>
             <span class="step-label">Watch a video — preview before saving</span>
@@ -241,7 +239,7 @@ memory:
               <code>skillforge recall "sales funnel"</code>
               <button class="copy-btn" onclick="copyCode(this,'skillforge recall &quot;sales funnel&quot;')">Copy</button>
             </div>
-            <p class="step-desc">Or run <code>skillforge serve</code> to expose your library as an MCP server — any compatible agent can query it on demand. Skills are saved at <code>~/.skillforge/library/@creator/topic.skill.md</code>.</p>
+            <p class="step-desc">Or run <code>skillforge serve</code> to expose your library as an MCP server — any compatible agent can query it on demand. Skills are saved at <code>~/.skillforge/library/@creator/topic/SKILL.md</code>.</p>
           </li>
         </ol>
         <div class="modal-actions">
