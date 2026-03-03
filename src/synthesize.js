@@ -551,8 +551,68 @@ ${truncated}
   return { bullets: Array.isArray(result.bullets) ? result.bullets : [] };
 }
 
+async function proposeIntents({ transcript, title, model }) {
+  // Sample transcript: first 12KB + last 4KB for long videos
+  let sample = chunkText(transcript, 12000)[0];
+  if (transcript.length > 16000) {
+    sample += "\n\n[...]\n\n" + transcript.slice(-4000);
+  }
+
+  const prompt = `
+You are analyzing a YouTube video transcript to propose what skills can be forged from it.
+
+Video title: ${title || "Unknown"}
+
+Return strict JSON only with this exact schema:
+{
+  "proposals": [
+    {
+      "name": "string (kebab-case skill name, e.g. pricing-strategy-framework)",
+      "intent": "string (what the skill focuses on extracting, e.g. pricing strategy)",
+      "description": "string (1-2 sentences: what will be learned)"
+    }
+  ]
+}
+
+Rules:
+- Propose 1-4 skills depending on how many distinct topics the video covers.
+- A focused single-topic video should produce exactly 1 proposal.
+- A broad video covering multiple distinct topics can produce 2-4 proposals.
+- Each proposal must be specific and actionable — not generic summaries.
+- The "intent" field should be a concise phrase describing the extraction focus.
+- The "name" field must be kebab-case, suitable as a folder name.
+- Do not fabricate content not present in the transcript.
+
+Transcript:
+${sample}
+`.trim();
+
+  try {
+    const result = await callProvider(prompt, model);
+    const proposals = Array.isArray(result.proposals) ? result.proposals : [];
+    if (proposals.length > 0) {
+      return { proposals: proposals.slice(0, 4) };
+    }
+  } catch {
+    // Fall through to fallback
+  }
+
+  // Fallback: single generic proposal from video title
+  const fallbackName = slugify(title || "youtube-skill");
+  return {
+    proposals: [
+      {
+        name: fallbackName,
+        intent: title || "general knowledge",
+        description: `Extract frameworks, tactics, and key insights from: ${title || "this video"}.`,
+      },
+    ],
+  };
+}
+
 export {
   synthesizeKnowledge,
   previewTranscript,
+  proposeIntents,
   callProviderRaw,
 };

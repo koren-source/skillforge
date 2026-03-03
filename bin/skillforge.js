@@ -3,6 +3,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
+import readline from "node:readline/promises";
+import { spawnSync } from "node:child_process";
 import { Command } from "commander";
 import chalk from "chalk";
 import ora from "ora";
@@ -16,7 +18,7 @@ import {
   runYtDlp,
 } from "../src/extract.js";
 import { searchTopic } from "../src/search.js";
-import { synthesizeKnowledge } from "../src/synthesize.js";
+import { synthesizeKnowledge, proposeIntents } from "../src/synthesize.js";
 import {
   formatDocument,
   formatSkillTree,
@@ -124,6 +126,18 @@ async function writeOutput(filePath, content) {
   await fs.writeFile(filePath, content, "utf8");
 }
 
+function getGitUsername() {
+  try {
+    const result = spawnSync("git", ["config", "user.name"], { encoding: "utf8", timeout: 5000 });
+    if (result.status === 0 && result.stdout.trim()) return result.stdout.trim();
+  } catch { /* ignore */ }
+  try {
+    return os.userInfo().username;
+  } catch {
+    return null;
+  }
+}
+
 async function printForgeConfirmation({ destination, creator, videoCount, sourceUrls = [] }) {
   process.stdout.write(`\n${chalk.bold("Skill forged successfully!")}\n\n`);
   process.stdout.write(`${await formatSkillTree(destination)}\n\n`);
@@ -133,11 +147,77 @@ async function printForgeConfirmation({ destination, creator, videoCount, source
   }
   process.stdout.write(`${chalk.green("Videos:")} ${videoCount}\n`);
 
+  const username = getGitUsername();
+  if (username) {
+    process.stdout.write(`${chalk.green("Forged by:")} ${username}\n`);
+  }
+
   if (sourceUrls.length) {
     process.stdout.write(`${chalk.green("Sources:")}\n`);
     for (const url of sourceUrls) {
       process.stdout.write(`  ${chalk.dim(url)}\n`);
     }
+  }
+}
+
+function parseProposalInput(input, proposalCount) {
+  const trimmed = (input || "").trim().toLowerCase();
+
+  if (!trimmed || trimmed === "all") {
+    return { type: "selected", indices: Array.from({ length: proposalCount }, (_, i) => i) };
+  }
+
+  if (trimmed === "cancel" || trimmed === "q" || trimmed === "n") {
+    return { type: "cancel" };
+  }
+
+  // Try parsing as indices: "1", "1,3", "1-3", "1, 2, 3"
+  if (/^[\d,\s-]+$/.test(trimmed)) {
+    const indices = new Set();
+    for (const part of trimmed.split(",")) {
+      const rangeMatch = part.trim().match(/^(\d+)\s*-\s*(\d+)$/);
+      if (rangeMatch) {
+        const start = parseInt(rangeMatch[1], 10);
+        const end = parseInt(rangeMatch[2], 10);
+        for (let i = start; i <= end; i++) {
+          if (i >= 1 && i <= proposalCount) indices.add(i - 1);
+        }
+      } else {
+        const num = parseInt(part.trim(), 10);
+        if (num >= 1 && num <= proposalCount) indices.add(num - 1);
+      }
+    }
+    if (indices.size > 0) {
+      return { type: "selected", indices: [...indices].sort((a, b) => a - b) };
+    }
+  }
+
+  // Anything else is a custom intent override
+  return { type: "custom", intent: (input || "").trim() };
+}
+
+async function promptProposalSelection(proposals) {
+  // Non-TTY: auto-select all
+  if (!process.stdin.isTTY) {
+    return { type: "selected", indices: Array.from({ length: proposals.length }, (_, i) => i) };
+  }
+
+  process.stdout.write(`\n${chalk.bold("Proposed skills to forge:")}\n\n`);
+  for (let i = 0; i < proposals.length; i++) {
+    const p = proposals[i];
+    process.stdout.write(`  ${chalk.cyan(`${i + 1}.`)} ${chalk.bold(p.name)}\n`);
+    process.stdout.write(`     ${chalk.green("Intent:")} ${p.intent}\n`);
+    process.stdout.write(`     ${chalk.dim(p.description)}\n\n`);
+  }
+
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    const answer = await rl.question(
+      chalk.yellow(`Select skills to forge (1-${proposals.length}, all, or type custom intent): `)
+    );
+    return parseProposalInput(answer, proposals.length);
+  } finally {
+    rl.close();
   }
 }
 
@@ -776,6 +856,76 @@ program
     })
   );
 
+// ── watch: forge helper ──────────────────────────────────────────────
+async function forgeSkill({ transcriptData, topic, intent, model, format, output, spinner }) {
+  const detectedCreator = transcriptData.channelTitle || "unknown-creator";
+  const transcripts = [transcriptData];
+  const safeTopic = slugify(topic);
+
+  let destination;
+  let creatorMeta = null;
+
+  if (detectedCreator) {
+    const creatorSlug = slugifyCreator(detectedCreator);
+    creatorMeta = { creator: detectedCreator, creatorSlug };
+    destination = path.join(os.homedir(), ".skillforge", "library", creatorSlug, safeTopic, "SKILL.md");
+
+    // Merge: load existing source URLs and re-fetch cached transcripts
+    // Check v2 folder path first, fall back to v1 flat file
+    let watchMergeSource = destination;
+    try {
+      await fs.access(destination);
+    } catch {
+      const legacyDest = path.join(os.homedir(), ".skillforge", "library", creatorSlug, `${safeTopic}.skill.md`);
+      try {
+        await fs.access(legacyDest);
+        watchMergeSource = legacyDest;
+      } catch { /* no existing file */ }
+    }
+    try {
+      const existingContent = await fs.readFile(watchMergeSource, "utf8");
+      const existingUrls = [];
+      let inSV = false;
+      for (const line of existingContent.split("\n")) {
+        if (line === "---" && inSV) break;
+        if (line.startsWith("source_videos:")) { inSV = true; continue; }
+        if (inSV) {
+          const m = line.match(/^\s+-\s+url:\s+"([^"]+)"/);
+          const m2 = line.match(/^\s+-\s+"([^"]+)"/);
+          if (m) existingUrls.push(m[1]);
+          else if (m2) existingUrls.push(m2[1]);
+          else if (!line.match(/^\s+date:/)) inSV = false;
+        }
+      }
+      const newUrls = new Set(transcripts.map((t) => t.url));
+      const missingUrls = existingUrls.filter((u) => !newUrls.has(u));
+      if (missingUrls.length > 0) {
+        if (spinner) spinner.text = `Merging with ${missingUrls.length} existing source(s)`;
+        const oldTranscripts = await extractFromUrls(missingUrls, { limit: missingUrls.length });
+        transcripts.push(...oldTranscripts);
+      }
+    } catch {
+      // No existing file — fresh build
+    }
+  } else {
+    destination = resolveDestination(output, format, topic);
+  }
+
+  const synthesis = await synthesizeKnowledge({
+    transcripts,
+    topic,
+    model,
+    intent,
+    outputPath: destination,
+    creatorMeta,
+  });
+
+  const content = formatDocument(format, synthesis);
+  await writeOutput(destination, content);
+
+  return { destination, detectedCreator, transcripts };
+}
+
 // ── watch ─────────────────────────────────────────────────────────────
 program
   .command("watch <url>")
@@ -787,7 +937,7 @@ program
   .option("--intent <intent>", "Intent string for skill indexing")
   .action(
     withErrorHandler(async (url, options) => {
-      const spinner = ora({ text: "Fetching transcript", color: "cyan" }).start();
+      const spinner = ora({ text: "Pulling transcript...", color: "cyan" }).start();
       const transcriptData = await fetchTranscriptForUrl(url);
 
       if (!transcriptData || !transcriptData.transcript) {
@@ -795,83 +945,92 @@ program
         return;
       }
 
-      const detectedCreator = transcriptData.channelTitle || 'unknown-creator';
       const videoTitle = transcriptData.title || "YouTube Video";
-      spinner.text = `Synthesizing: ${videoTitle}`;
 
-      const transcripts = [transcriptData];
-      const topic = options.skill || videoTitle;
-      const safeTopic = slugify(topic);
-      const intent = options.intent || "";
+      // Branch A: intent provided — forge directly (backward compatible)
+      if (options.intent) {
+        spinner.text = `Synthesizing: ${videoTitle}`;
+        const topic = options.skill || videoTitle;
 
-      let destination;
-      let creatorMeta = null;
+        const { destination, detectedCreator, transcripts } = await forgeSkill({
+          transcriptData,
+          topic,
+          intent: options.intent,
+          model: options.model,
+          format: options.format,
+          output: options.output,
+          spinner,
+        });
 
-      if (detectedCreator) {
-        const creatorSlug = slugifyCreator(detectedCreator);
-        creatorMeta = { creator: detectedCreator, creatorSlug };
-        destination = path.join(os.homedir(), ".skillforge", "library", creatorSlug, safeTopic, "SKILL.md");
-
-        // Merge: load existing source URLs and re-fetch cached transcripts
-        // Check v2 folder path first, fall back to v1 flat file
-        let watchMergeSource = destination;
-        try {
-          await fs.access(destination);
-        } catch {
-          const legacyDest = path.join(os.homedir(), ".skillforge", "library", creatorSlug, `${safeTopic}.skill.md`);
-          try {
-            await fs.access(legacyDest);
-            watchMergeSource = legacyDest;
-          } catch { /* no existing file */ }
-        }
-        try {
-          const existingContent = await fs.readFile(watchMergeSource, "utf8");
-          const existingUrls = [];
-          let inSV = false;
-          for (const line of existingContent.split("\n")) {
-            if (line === "---" && inSV) break;
-            if (line.startsWith("source_videos:")) { inSV = true; continue; }
-            if (inSV) {
-              const m = line.match(/^\s+-\s+url:\s+"([^"]+)"/);
-              const m2 = line.match(/^\s+-\s+"([^"]+)"/);
-              if (m) existingUrls.push(m[1]);
-              else if (m2) existingUrls.push(m2[1]);
-              else if (!line.match(/^\s+date:/)) inSV = false;
-            }
-          }
-          const newUrls = new Set(transcripts.map((t) => t.url));
-          const missingUrls = existingUrls.filter((u) => !newUrls.has(u));
-          if (missingUrls.length > 0) {
-            spinner.text = `Merging with ${missingUrls.length} existing source(s)`;
-            const oldTranscripts = await extractFromUrls(missingUrls, { limit: missingUrls.length });
-            transcripts.push(...oldTranscripts);
-          }
-        } catch {
-          // No existing file — fresh build
-        }
-      } else {
-        destination = resolveDestination(options.output, options.format, topic);
+        spinner.succeed("Skill forged successfully!");
+        await printForgeConfirmation({
+          destination,
+          creator: detectedCreator,
+          videoCount: transcripts.length,
+          sourceUrls: transcripts.map((t) => t.url).filter(Boolean),
+        });
+        return;
       }
 
-      const synthesis = await synthesizeKnowledge({
-        transcripts,
-        topic,
+      // Branch B: no intent — propose skills interactively
+      spinner.text = "Detecting topics...";
+      const { proposals } = await proposeIntents({
+        transcript: transcriptData.transcript,
+        title: videoTitle,
         model: options.model,
-        intent,
-        outputPath: destination,
-        creatorMeta,
       });
 
-      const content = formatDocument(options.format, synthesis);
-      await writeOutput(destination, content);
+      spinner.text = "Generating skill proposals...";
+      spinner.succeed(`Found ${proposals.length} skill${proposals.length === 1 ? "" : "s"} to forge.`);
 
-      spinner.succeed("Skill forged successfully!");
-      await printForgeConfirmation({
-        destination,
-        creator: detectedCreator,
-        videoCount: transcripts.length,
-        sourceUrls: transcripts.map((t) => t.url).filter(Boolean),
-      });
+      const selection = await promptProposalSelection(proposals);
+
+      if (selection.type === "cancel") {
+        process.stdout.write(chalk.yellow("\nCancelled. No skills forged.\n"));
+        return;
+      }
+
+      // Determine which skills to forge
+      let skillsToForge;
+      if (selection.type === "custom") {
+        // User typed a custom intent — forge a single skill with it
+        skillsToForge = [{
+          name: options.skill || videoTitle,
+          intent: selection.intent,
+        }];
+      } else {
+        // User selected one or more proposals by index
+        skillsToForge = selection.indices.map((i) => proposals[i]);
+      }
+
+      // Forge each selected skill
+      for (let i = 0; i < skillsToForge.length; i++) {
+        const skill = skillsToForge[i];
+        const forgeSpinner = ora({
+          text: `Forging ${i + 1}/${skillsToForge.length}: ${skill.name}`,
+          color: "cyan",
+        }).start();
+
+        const topic = options.skill || skill.name;
+
+        const { destination, detectedCreator, transcripts } = await forgeSkill({
+          transcriptData,
+          topic,
+          intent: skill.intent,
+          model: options.model,
+          format: options.format,
+          output: options.output,
+          spinner: forgeSpinner,
+        });
+
+        forgeSpinner.succeed(`Forged: ${skill.name}`);
+        await printForgeConfirmation({
+          destination,
+          creator: detectedCreator,
+          videoCount: transcripts.length,
+          sourceUrls: transcripts.map((t) => t.url).filter(Boolean),
+        });
+      }
     })
   );
 
@@ -1072,4 +1231,13 @@ if (firstArg && /^(https?:\/\/|youtube\.com|youtu\.be)/.test(firstArg)) {
   process.argv.splice(2, 0, "watch");
 }
 
-await program.parseAsync(process.argv);
+// Guard: only run CLI when executed directly (not imported for testing)
+const isMainModule = process.argv[1] && (
+  process.argv[1].endsWith("/skillforge.js") ||
+  process.argv[1].endsWith("/skillforge")
+);
+if (isMainModule) {
+  await program.parseAsync(process.argv);
+}
+
+export { parseProposalInput };
