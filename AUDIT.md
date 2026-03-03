@@ -11,8 +11,8 @@
 SkillForge is a Node.js CLI tool that transforms YouTube videos into structured AI agent skills. The pipeline:
 
 1. **Extract** — Downloads video transcripts via `yt-dlp`, parses VTT subtitles, deduplicates, and caches results
-2. **Synthesize** — Sends transcripts to Claude (via Claude CLI) for knowledge extraction: frameworks, tactics, quotes, numbers
-3. **Format** — Outputs structured `.skill.md` files with YAML frontmatter, organized by creator in `~/.skillforge/library/`
+2. **Synthesize** — Sends transcripts to the configured AI provider for knowledge extraction: frameworks, tactics, quotes, numbers
+3. **Format** — Outputs structured skill folders with `SKILL.md` and YAML frontmatter, organized by creator in `~/.skillforge/library/`
 4. **Index** — Maintains a JSON index and SQLite FTS database for intent-based skill recall
 5. **Serve** — Exposes skills via MCP server for Claude Code integration
 
@@ -207,12 +207,11 @@ No remaining issues. See final fixes below.
 **File:** `src/format.js:221-223`
 **Severity:** Low (cosmetic inconsistency)
 
-`makeOutputFilename("skill", slug)` returned `slug/SKILL.md` (nested directory path via `pathJoinSafe`), but the library convention everywhere else is `topic.skill.md` (flat file). This caused inconsistent output paths when using `--output` with skill format vs the default library path.
+Updated to use the v2 folder convention. `makeOutputFilename("skill", slug)` now returns `slug/SKILL.md` (nested directory path), matching the library convention of `@creator/topic/SKILL.md`.
 
-**Before:** `pathJoinSafe(topicSlug, "SKILL.md")` → `my-topic/SKILL.md`
-**After:** `` `${topicSlug}.skill.md` `` → `my-topic.skill.md`
+**Output:** `path.join(topicSlug, "SKILL.md")` → `my-topic/SKILL.md`
 
-Removed the now-unused `pathJoinSafe` helper. Updated unit test assertion.
+Updated unit test assertion to match.
 
 ### FIX 19: End-to-end integration test
 
@@ -299,7 +298,7 @@ Added a real integration test that runs `skillforge watch` against a known publi
 - 28 unit tests + 1 integration test covering core utilities and end-to-end flow
 - Cache stores metadata, eliminating redundant network calls
 - All CLI commands documented and wired
-- Consistent flat filename convention (`topic.skill.md`) across library and output paths
+- Consistent folder convention (`topic/SKILL.md`) across library and output paths, with v1 flat file backward compat
 
 **Remaining:** None.
 

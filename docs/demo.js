@@ -11,7 +11,8 @@ const demoLines = [
   { text: "  instructions: Lead with value-stack...", type: "output" },
   { text: "Save to ~/.skillforge/library/@alexhormozi/? [y/N]", type: "output" },
   { text: "y", type: "command" },
-  { text: "Saved: @alexhormozi/sales-funnel-and-closing-framework.skill.md", type: "output" },
+  { text: "~/.skillforge/library/@alexhormozi/sales-funnel-and-closing-framework/", type: "output" },
+  { text: "└── SKILL.md", type: "output" },
   { text: "skillforge recall \"sales funnel\"", type: "command" },
   { text: "Found: @alexhormozi/sales-funnel-and-closing-framework", type: "output" },
   { text: "Skill loaded. Your agent is ready.", type: "output" }

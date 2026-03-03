@@ -46,7 +46,7 @@ ${skillB}
 `.trim();
 }
 
-async function mergeSkills({ creatorA, topicA, creatorB, topicB, outputCreator, outputTopic, model = "claude-sonnet-4-5" }) {
+async function mergeSkills({ creatorA, topicA, creatorB, topicB, outputCreator, outputTopic, model }) {
   const contentA = await readSkill(creatorA, topicA);
   if (!contentA) {
     throw new Error(`Skill not found: ${creatorA}/${topicA}`);
