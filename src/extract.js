@@ -4,10 +4,9 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import * as cache from "./cache.js";
 
-// Always pass the node JS runtime + remote component solver so yt-dlp can handle YouTube's JS challenges
+// Always pass the node JS runtime so yt-dlp can handle YouTube's JS challenges
 const YT_DLP_BASE_ARGS = [
   "--js-runtimes", "node:/opt/homebrew/bin/node",
-  "--remote-components", "ejs:github",
 ];
 
 function runYtDlpOnce(args, options = {}) {
