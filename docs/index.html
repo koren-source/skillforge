@@ -71,7 +71,7 @@
           <div class="hero-copy">
             <p class="badge">YouTube → Agent Skill Library</p>
             <h1>Humans learned from YouTube for years.<span>Now let your agent do the same.</span></h1>
-            <p class="hero-text">Paste any YouTube URL — any creator, any video. SkillForge extracts the knowledge and turns it into a ready-to-use agent skill. No setup, no whitelists, just paste and learn.</p>
+            <p class="hero-text">Paste any YouTube URL — SkillForge extracts the frameworks, tactics, key numbers, and quotes from any video in under 3 minutes. No whitelists, no setup, no trusted-creator lists. Paste and your agent learns.</p>
             <div class="hero-actions">
               <button class="button button-primary" onclick="openModal()">Get Started</button>
               <a class="button button-secondary" href="https://github.com/koren-source/skillforge" target="_blank" rel="noreferrer">View on GitHub</a>
@@ -95,9 +95,9 @@
             <h2>One channel in. A compounding skill library out.</h2>
           </div>
           <div class="steps-grid">
-            <article class="step-card"><span class="step-number">01</span><h3>Paste any YouTube URL</h3><p>Drop a video, playlist, or channel URL. SkillForge handles the rest — no creator setup required.</p></article>
-            <article class="step-card"><span class="step-number">02</span><h3>Agent scans and proposes skills</h3><p>SkillForge ranks the best videos, extracts the relevant frameworks, then suggests reusable skills.</p></article>
-            <article class="step-card"><span class="step-number">03</span><h3>Skills saved to memory permanently</h3><p>Ship the approved skills straight into agent memory so future tasks start smarter.</p></article>
+            <article class="step-card"><span class="step-number">01</span><h3>Paste any YouTube URL</h3><p>Drop a video, channel, or playlist. No trusted-creator lists, no API keys, no setup. Any URL works.</p></article>
+            <article class="step-card"><span class="step-number">02</span><h3>SkillForge extracts the real knowledge</h3><p>Frameworks, tactics, key numbers, quotes — pulled from the transcript and synthesized into a structured skill in under 3 minutes.</p></article>
+            <article class="step-card"><span class="step-number">03</span><h3>Saved to your agent library forever</h3><p>Skills live at <code>~/.skillforge/library/@creator/</code> and compound over time. Every new video from that creator merges in — nothing overwrites.</p></article>
           </div>
         </section>
 
@@ -116,27 +116,28 @@
         <section class="section built-for-agents">
           <div class="section-heading"><p class="eyebrow">Built for agents</p><h2>Output that fits the way agent memory actually works.</h2></div>
           <div class="snippet-shell">
-            <pre><code># SKILL.md
-name: sales-funnel-and-closing-framework
-source: youtube/@AlexHormozi
-creator: "@AlexHormozi"
-topic: sales-funnel-and-closing-framework
-intent: build a sales funnel
+            <pre><code># ~/.skillforge/library/@ryan-clogg/scaling-high-ticket-to-10m/SKILL.md
 
-when_to_use:
-  - Drafting funnel strategy
-  - Writing offers and objections handling
-  - Reviewing qualification and close steps
+name: "Scaling High-Ticket Coaching to $10.6M in 62 Days"
+creator: "Ryan Clogg"
+built_at: "2026-03-02"
+source_videos: 1
 
-instructions:
-  - Lead with value-stack, urgency, and proof
-  - Remove friction between lead capture and close
-  - Handle objections with diagnosis before pitch
-  - Use qualification criteria before escalation
+## Frameworks
+- Multi-Funnel Acquisition Architecture
+- Department Lever Planning (marketing/sales/fulfillment/tech/people)
+- Revenue Math Model — backwards-plan from goal → closers → ad spend
 
-memory:
-  persistence: permanent
-  approved_by: operator</code></pre>
+## Key Numbers
+- $161K/day to hit $5M/month
+- 25–30% close rate · 55–60% show rate
+- 42 closers needed at $120K/rep/month
+- $150–250 cost per booked call
+
+## For Your Agent
+When asked how to scale high-ticket revenue, use the
+Revenue Math Model: work backwards from target → 
+calculate reps needed → identify the bottleneck.</code></pre>
           </div>
         </section>
       </main>
@@ -149,6 +150,28 @@ memory:
             <p class="section-subtext">Every video you watch from a creator adds to their skill branch. The library gets richer over time — nothing overwrites, everything stacks.</p>
           </div>
           <div class="creator-grid">
+            <div class="creator-card">
+              <div class="creator-header">
+                <div class="creator-avatar">RC</div>
+                <div>
+                  <p class="creator-handle">@RyanClogg</p>
+                  <p class="creator-meta">2 skills · 2 videos ingested</p>
+                </div>
+              </div>
+              <ul class="skill-list">
+                <li class="skill-item skill-active">
+                  <span class="skill-dot"></span>
+                  <span class="skill-name">5-systems-that-took-us-from-0-to-73m</span>
+                  <span class="skill-count">3 frameworks · 6 tactics</span>
+                </li>
+                <li class="skill-item skill-active">
+                  <span class="skill-dot"></span>
+                  <span class="skill-name">scaling-high-ticket-to-10-6m-in-62-days</span>
+                  <span class="skill-count">3 frameworks · 9 tactics</span>
+                </li>
+              </ul>
+              <p class="creator-path"><code>~/.skillforge/library/@ryan-clogg/</code></p>
+            </div>
             <div class="creator-card">
               <div class="creator-header">
                 <div class="creator-avatar">AH</div>
@@ -170,29 +193,27 @@ memory:
                 </li>
                 <li class="skill-item">
                   <span class="skill-dot"></span>
-                  <span class="skill-name">cold-outreach-system</span>
+                  <span class="skill-name">offer-creation-framework</span>
                   <span class="skill-count">2 videos</span>
                 </li>
                 <li class="skill-item">
                   <span class="skill-dot"></span>
-                  <span class="skill-name">offer-creation-framework</span>
+                  <span class="skill-name">cold-outreach-system</span>
                   <span class="skill-count">2 videos</span>
                 </li>
               </ul>
               <p class="creator-path"><code>~/.skillforge/library/@alexhormozi/</code></p>
             </div>
-
-
           </div>
           <div class="compound-callout">
-            <p>🔁 Watch a second Alex Hormozi video on sales funnels? It <strong>merges in</strong> — the skill gets sharper, nothing gets lost.</p>
+            <p>🔁 Watch a second Ryan Clogg video on scaling revenue? It <strong>merges in</strong> — new tactics stack on top, old skills get sharper. Nothing gets lost.</p>
           </div>
         </section>
 
       <footer class="site-footer" id="footer-cta">
         <div class="footer-card">
           <p class="eyebrow">Ready to teach your agent?</p>
-          <h2>Paste a URL. Get a skill. Your agent remembers forever.</h2>
+          <h2>Paste a URL. 3 minutes. Your agent has a skill it keeps forever.</h2>
           <div class="hero-actions">
             <button class="button button-primary" onclick="openModal()">Get Started</button>
             <a class="button button-secondary" href="https://github.com/koren-source/skillforge" target="_blank" rel="noreferrer">View on GitHub</a>
