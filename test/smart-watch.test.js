@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { parseProposalInput } from "../bin/skillforge.js";
+import { parseProposalInput, scoreTopicMatch } from "../bin/skillforge.js";
 
 describe("parseProposalInput", () => {
   it("selects all when input is empty", () => {
@@ -78,5 +78,28 @@ describe("parseProposalInput", () => {
   it("handles whitespace-padded input", () => {
     const result = parseProposalInput("  2  ", 3);
     assert.deepEqual(result, { type: "selected", indices: [1] });
+  });
+});
+
+describe("scoreTopicMatch", () => {
+  it("scores exact match high (>= 0.9)", () => {
+    const score = scoreTopicMatch("landing-pages", "", "landing-pages");
+    assert.ok(score >= 0.9, `expected >= 0.9, got ${score}`);
+  });
+
+  it("scores semantic overlap above threshold (>= 0.6)", () => {
+    const score = scoreTopicMatch("landing page optimization", "", "landing-pages");
+    assert.ok(score >= 0.6, `expected >= 0.6, got ${score}`);
+  });
+
+  it("scores unrelated topics below threshold (< 0.6)", () => {
+    const score = scoreTopicMatch("email marketing", "", "landing-pages");
+    assert.ok(score < 0.6, `expected < 0.6, got ${score}`);
+  });
+
+  it("uses intent in scoring when provided", () => {
+    const withIntent = scoreTopicMatch("pages", "landing page design", "landing-pages");
+    const withoutIntent = scoreTopicMatch("pages", "", "landing-pages");
+    assert.ok(withIntent >= withoutIntent, `intent should help: ${withIntent} vs ${withoutIntent}`);
   });
 });

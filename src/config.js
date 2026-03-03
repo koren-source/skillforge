@@ -50,4 +50,15 @@ async function removeTrusted(creator) {
   return false;
 }
 
-export { loadConfig, saveConfig, isTrusted, addTrusted, removeTrusted };
+async function hasConsented() {
+  const config = await loadConfig();
+  return config.consented === true;
+}
+
+async function setConsented() {
+  const config = await loadConfig();
+  config.consented = true;
+  await saveConfig(config);
+}
+
+export { loadConfig, saveConfig, isTrusted, addTrusted, removeTrusted, hasConsented, setConsented };

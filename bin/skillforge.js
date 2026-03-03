@@ -31,7 +31,7 @@ import { resolveCreator } from "../src/creator.js";
 import { scoreVideos } from "../src/score.js";
 import * as propose from "../src/propose.js";
 import * as skillIndex from "../src/skillIndex.js";
-import { loadConfig, addTrusted, removeTrusted } from "../src/config.js";
+import { loadConfig, addTrusted, removeTrusted, hasConsented, setConsented } from "../src/config.js";
 import { checkAuth, getAuthErrorMessage } from "../src/auth.js";
 import { getDefaultModel, getProviderName } from "../src/provider.js";
 
@@ -323,6 +323,37 @@ async function gatherSourceItems(source, limit) {
   throw new Error(`Unsupported source type: ${source.type}`);
 }
 
+async function checkConsent() {
+  if (await hasConsented()) return true;
+
+  // Non-TTY: cannot prompt, exit
+  if (!process.stdin.isTTY) {
+    process.stderr.write(
+      "SkillForge requires consent to create ~/.skillforge/. Run interactively first.\n"
+    );
+    return false;
+  }
+
+  process.stdout.write(
+    `\nSkillForge will create ${chalk.bold("~/.skillforge/")} to store:\n` +
+    `  - Skill files organized by creator and topic\n` +
+    `  - Cached transcripts and search index\n\n`
+  );
+
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    const answer = await rl.question(chalk.yellow("Allow? (y/n): "));
+    if (answer.trim().toLowerCase() === "y") {
+      await setConsented();
+      return true;
+    }
+    process.stderr.write("SkillForge requires ~/.skillforge/ to operate. Exiting.\n");
+    return false;
+  } finally {
+    rl.close();
+  }
+}
+
 function withErrorHandler(fn) {
   return async (...args) => {
     try {
@@ -332,6 +363,16 @@ function withErrorHandler(fn) {
       process.exitCode = 1;
     }
   };
+}
+
+function withConsent(fn) {
+  return withErrorHandler(async (...args) => {
+    if (!(await checkConsent())) {
+      process.exitCode = 1;
+      return;
+    }
+    await fn(...args);
+  });
 }
 
 program
@@ -348,7 +389,7 @@ trust
   .command("add <creator>")
   .description("Add a creator to the trusted list")
   .action(
-    withErrorHandler(async (creator) => {
+    withConsent(async (creator) => {
       const normalized = await addTrusted(creator);
       process.stdout.write(chalk.green(`Added ${normalized} to trusted creators.\n`));
     })
@@ -376,7 +417,7 @@ trust
   .command("remove <creator>")
   .description("Remove a creator from the trusted list")
   .action(
-    withErrorHandler(async (creator) => {
+    withConsent(async (creator) => {
       const removed = await removeTrusted(creator);
       if (removed) {
         const normalized = creator.startsWith("@") ? creator : `@${creator}`;
@@ -566,7 +607,7 @@ program
     20
   )
   .action(
-    withErrorHandler(async (url, options) => {
+    withConsent(async (url, options) => {
       const spinner = ora({ text: "Scanning source", color: "cyan" }).start();
 
       const source = resolveSource(url, {});
@@ -644,7 +685,7 @@ program
     "AI model to use"
   )
   .action(
-    withErrorHandler(async (url, options) => {
+    withConsent(async (url, options) => {
       const spinner = ora({ text: "Preparing build", color: "cyan" }).start();
 
       if (!["skill", "markdown", "json"].includes(options.format)) {
@@ -856,6 +897,72 @@ program
     })
   );
 
+// ── timed spinner ────────────────────────────────────────────────────
+function timedSpinner(label) {
+  const start = Date.now();
+  const spinner = ora({ text: `${label} (0s)`, color: "cyan" }).start();
+  const interval = setInterval(() => {
+    const elapsed = Math.floor((Date.now() - start) / 1000);
+    spinner.text = `${spinner._label} (${elapsed}s)`;
+  }, 1000);
+  spinner._label = label;
+  const origTextSet = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(spinner), "text")?.set
+    || ((v) => { spinner._oraText = v; });
+  const origTextGet = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(spinner), "text")?.get
+    || (() => spinner._oraText);
+  Object.defineProperty(spinner, "text", {
+    get() { return origTextGet.call(this); },
+    set(v) {
+      this._label = v;
+      const elapsed = Math.floor((Date.now() - start) / 1000);
+      origTextSet.call(this, `${v} (${elapsed}s)`);
+    },
+    configurable: true,
+  });
+  const origSucceed = spinner.succeed.bind(spinner);
+  spinner.succeed = (msg) => {
+    clearInterval(interval);
+    const elapsed = Math.floor((Date.now() - start) / 1000);
+    origSucceed(msg ? `${msg} (${elapsed}s)` : undefined);
+  };
+  const origFail = spinner.fail.bind(spinner);
+  spinner.fail = (msg) => {
+    clearInterval(interval);
+    origFail(msg);
+  };
+  return spinner;
+}
+
+// ── semantic compounding helpers ─────────────────────────────────────
+function computeTokenScore(queryText, haystackText) {
+  const queryTokens = skillIndex.tokenize(queryText);
+  const haystackTokens = skillIndex.tokenize(haystackText);
+  if (queryTokens.length === 0) return 0;
+  const haystackSet = new Set(haystackTokens);
+  let matches = 0;
+  for (const token of queryTokens) {
+    if (haystackSet.has(token)) {
+      matches += 1.0;
+    } else if (haystackTokens.some((t) => t.includes(token) || token.includes(t))) {
+      matches += 0.5;
+    } else {
+      const stem = token.slice(0, 4);
+      if (stem.length >= 4 && haystackTokens.some((t) => t.startsWith(stem))) {
+        matches += 0.3;
+      }
+    }
+  }
+  return matches / queryTokens.length;
+}
+
+function scoreTopicMatch(newTopic, newIntent, existingSlug) {
+  const newText = `${newTopic} ${newIntent || ""}`;
+  const existingText = existingSlug.replace(/-/g, " ");
+  const forward = computeTokenScore(newText, existingText);
+  const reverse = computeTokenScore(existingText, newText);
+  return Math.max(forward, reverse);
+}
+
 // ── watch: forge helper ──────────────────────────────────────────────
 async function forgeSkill({ transcriptData, topic, intent, model, format, output, spinner }) {
   const detectedCreator = transcriptData.channelTitle || "unknown-creator";
@@ -868,7 +975,36 @@ async function forgeSkill({ transcriptData, topic, intent, model, format, output
   if (detectedCreator) {
     const creatorSlug = slugifyCreator(detectedCreator);
     creatorMeta = { creator: detectedCreator, creatorSlug };
-    destination = path.join(os.homedir(), ".skillforge", "library", creatorSlug, safeTopic, "SKILL.md");
+
+    // Semantic compounding: find best-matching existing skill
+    let effectiveTopic = safeTopic;
+    const creatorDir = path.join(os.homedir(), ".skillforge", "library", creatorSlug);
+    let existingSkills = [];
+    try {
+      const entries = await fs.readdir(creatorDir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (entry.isDirectory()) {
+          try { await fs.access(path.join(creatorDir, entry.name, "SKILL.md")); existingSkills.push(entry.name); } catch {}
+        }
+      }
+    } catch {}
+    if (!existingSkills.includes(safeTopic) && existingSkills.length > 0) {
+      let bestScore = 0;
+      let bestSlug = null;
+      for (const slug of existingSkills) {
+        const score = scoreTopicMatch(topic, intent, slug);
+        if (score > bestScore) {
+          bestScore = score;
+          bestSlug = slug;
+        }
+      }
+      if (bestScore >= 0.6 && bestSlug) {
+        effectiveTopic = bestSlug;
+        if (spinner) spinner.text = `Compounding into existing skill: ${bestSlug}`;
+      }
+    }
+
+    destination = path.join(os.homedir(), ".skillforge", "library", creatorSlug, effectiveTopic, "SKILL.md");
 
     // Merge: load existing source URLs and re-fetch cached transcripts
     // Check v2 folder path first, fall back to v1 flat file
@@ -936,8 +1072,8 @@ program
   .option("--format <format>", "Output format: skill, markdown, or json", "skill")
   .option("--intent <intent>", "Intent string for skill indexing")
   .action(
-    withErrorHandler(async (url, options) => {
-      const spinner = ora({ text: "Pulling transcript...", color: "cyan" }).start();
+    withConsent(async (url, options) => {
+      const spinner = timedSpinner("Pulling transcript...");
       const transcriptData = await fetchTranscriptForUrl(url);
 
       if (!transcriptData || !transcriptData.transcript) {
@@ -981,7 +1117,7 @@ program
       });
 
       spinner.text = "Generating skill proposals...";
-      spinner.succeed(`Found ${proposals.length} skill${proposals.length === 1 ? "" : "s"} to forge.`);
+      spinner.succeed(`Done — ${proposals.length} skill${proposals.length === 1 ? "" : "s"} proposed`);
 
       const selection = await promptProposalSelection(proposals);
 
@@ -1006,10 +1142,7 @@ program
       // Forge each selected skill
       for (let i = 0; i < skillsToForge.length; i++) {
         const skill = skillsToForge[i];
-        const forgeSpinner = ora({
-          text: `Forging ${i + 1}/${skillsToForge.length}: ${skill.name}`,
-          color: "cyan",
-        }).start();
+        const forgeSpinner = timedSpinner(`Forging ${i + 1}/${skillsToForge.length}: ${skill.name}`);
 
         const topic = options.skill || skill.name;
 
@@ -1219,7 +1352,7 @@ program
   .command("serve")
   .description("Start the SkillForge MCP server (stdio transport)")
   .action(
-    withErrorHandler(async () => {
+    withConsent(async () => {
       const { startServer } = await import("../src/mcp.js");
       await startServer();
     })
@@ -1240,4 +1373,4 @@ if (isMainModule) {
   await program.parseAsync(process.argv);
 }
 
-export { parseProposalInput };
+export { parseProposalInput, scoreTopicMatch };

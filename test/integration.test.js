@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { execSync, execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import os from "node:os";
 
 const OUTPUT_DIR = "/tmp/skillforge-test-output";
 const BIN = path.resolve(import.meta.dirname, "..", "bin", "skillforge.js");
@@ -37,13 +38,25 @@ const skipReason =
       ? "no network access"
       : undefined;
 
+let tmpHome;
+
 describe("integration: skillforge watch", { skip: skipReason }, () => {
   before(() => {
     fs.rmSync(OUTPUT_DIR, { recursive: true, force: true });
+    // Pre-seed consent so the non-TTY subprocess doesn't block
+    tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), "skillforge-int-"));
+    const configDir = path.join(tmpHome, ".skillforge");
+    fs.mkdirSync(configDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(configDir, "config.json"),
+      JSON.stringify({ trusted_creators: [], consented: true }) + "\n",
+      "utf8"
+    );
   });
 
   after(() => {
     fs.rmSync(OUTPUT_DIR, { recursive: true, force: true });
+    if (tmpHome) fs.rmSync(tmpHome, { recursive: true, force: true });
   });
 
   it("produces a valid .skill.md file from a real YouTube video", { timeout: 120_000 }, (t) => {
@@ -52,6 +65,7 @@ describe("integration: skillforge watch", { skip: skipReason }, () => {
       execFileSync("node", [BIN, "watch", TEST_VIDEO_URL, "--output", OUTPUT_DIR, "--intent", "test"], {
         timeout: 120_000,
         stdio: "pipe",
+        env: { ...process.env, HOME: tmpHome },
       });
     } catch (err) {
       const stderr = err.stderr?.toString() || "";

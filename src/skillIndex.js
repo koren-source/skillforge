@@ -156,4 +156,4 @@ async function listByCreator() {
   return groups;
 }
 
-export { add, search, list, listByCreator, remove, LIBRARY_DIR };
+export { add, search, list, listByCreator, remove, tokenize, LIBRARY_DIR };
