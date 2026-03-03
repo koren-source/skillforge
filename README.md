@@ -1,4 +1,4 @@
-[![npm version](https://img.shields.io/npm/v/skillforge.svg)](https://www.npmjs.com/package/skillforge)
+[![npm version](https://img.shields.io/npm/v/youtube-skillforge.svg)](https://www.npmjs.com/package/youtube-skillforge)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 [![Built with ❤️ by Cutbox.ai](https://img.shields.io/badge/Built%20with%20%E2%9D%A4%EF%B8%8F%20by-Cutbox.ai-black)](https://cutbox.ai)
 
@@ -28,7 +28,7 @@ The result isn't a transcript dump. It's operational knowledge — frameworks yo
 
 ```bash
 # Install
-npm install -g skillforge
+npm install -g youtube-skillforge
 
 # Install transcript fetcher
 brew install yt-dlp  # or: pip install yt-dlp
