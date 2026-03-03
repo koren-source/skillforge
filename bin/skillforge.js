@@ -9,6 +9,10 @@ import { Command } from "commander";
 import chalk from "chalk";
 import ora from "ora";
 
+const pkg = JSON.parse(
+  await fs.readFile(new URL("../package.json", import.meta.url), "utf8")
+);
+
 import os from "node:os";
 import {
   extractFromUrls,
@@ -337,7 +341,7 @@ function withErrorHandler(fn) {
 program
   .name("skillforge")
   .description("Turn YouTube videos, channels, and topics into agent-ready skills")
-  .version("4.0.0");
+  .version(pkg.version);
 
 // ── trust ────────────────────────────────────────────────────────────
 const trust = program

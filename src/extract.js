@@ -4,20 +4,35 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import * as cache from "./cache.js";
 
-// Always pass the node JS runtime so yt-dlp can handle YouTube's JS challenges
+// Pass the node JS runtime so yt-dlp can handle YouTube's JS challenges.
+// NOTE: --remote-components ejs:github was removed — it downloads a remote script on
+// every invocation and hangs when GitHub is slow or rate-limits the request.
 const YT_DLP_BASE_ARGS = [
   "--js-runtimes", "node:/opt/homebrew/bin/node",
 ];
 
 function runYtDlpOnce(args, options = {}) {
+  const { timeoutMs = 45000, ...spawnOptions } = options;
+
   return new Promise((resolve, reject) => {
     const child = spawn("yt-dlp", [...YT_DLP_BASE_ARGS, ...args], {
       stdio: ["ignore", "pipe", "pipe"],
-      ...options,
+      ...spawnOptions,
     });
 
     let stdout = "";
     let stderr = "";
+
+    const timer = setTimeout(() => {
+      // If yt-dlp hangs (common with --cookies-from-browser prompting for keychain),
+      // kill it so SkillForge can fall back.
+      try {
+        child.kill("SIGKILL");
+      } catch {
+        // ignore
+      }
+      reject(new Error(`yt-dlp timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
 
     child.stdout.on("data", (chunk) => {
       stdout += chunk.toString();
@@ -28,6 +43,7 @@ function runYtDlpOnce(args, options = {}) {
     });
 
     child.on("error", (error) => {
+      clearTimeout(timer);
       if (error.code === "ENOENT") {
         reject(
           new Error(
@@ -41,6 +57,7 @@ function runYtDlpOnce(args, options = {}) {
     });
 
     child.on("close", (code) => {
+      clearTimeout(timer);
       if (code !== 0) {
         reject(
           new Error(
@@ -253,11 +270,15 @@ async function fetchTranscriptForUrl(url) {
     let transcript = null;
     let captionSource = null;
 
-    // Fast path: subtitle download with browser cookies
+    // Fast path: subtitle download
+    // NOTE: --cookies-from-browser chrome can hang on some machines (keychain prompt).
+    // Keep it opt-in via env var.
+    const useChromeCookies = process.env.SKILLFORGE_COOKIES_FROM_BROWSER === "1";
+
     try {
       await runYtDlpOnce(
         [
-          "--cookies-from-browser", "chrome",
+          ...(useChromeCookies ? ["--cookies-from-browser", "chrome"] : []),
           "--skip-download",
           "--write-auto-sub",
           "--write-sub",
@@ -269,7 +290,7 @@ async function fetchTranscriptForUrl(url) {
           path.join(tempDir, "%(id)s.%(ext)s"),
           url,
         ],
-        { cwd: tempDir }
+        { cwd: tempDir, timeoutMs: 45000 }
       );
 
       const subtitleResult = await readFirstSubtitleFile(tempDir);
