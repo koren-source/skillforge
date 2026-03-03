@@ -70,22 +70,19 @@
         <section class="hero">
           <div class="hero-copy">
             <p class="badge">YouTube → Agent Skill Library</p>
-            <h1>Humans learned from YouTube for years.<span>Now let your agent do the same.</span></h1>
-            <p class="hero-text">Paste any YouTube URL — SkillForge extracts the frameworks, tactics, key numbers, and quotes from any video in under 3 minutes. No whitelists, no setup, no trusted-creator lists. Paste and your agent learns.</p>
+            <h1>Your AI Agent Learns From YouTube.<span>Frameworks. Tactics. Numbers. In 3 Minutes.</span></h1>
+            <p class="hero-text">Paste any YouTube URL. SkillForge watches it, extracts every framework, tactic, and key number, and saves it as a skill your agent recalls on command — forever. No setup. No API keys. Under 3 minutes.</p>
             <div class="hero-actions">
               <button class="button button-primary" onclick="openModal()">Get Started</button>
               <a class="button button-secondary" href="https://github.com/koren-source/skillforge" target="_blank" rel="noreferrer">View on GitHub</a>
             </div>
             <p class="trust-line">Built by Koren Saida at <a href="https://cutbox.ai" target="_blank" rel="noreferrer">Cutbox.ai</a> <span aria-hidden="true">·</span> Open source <span aria-hidden="true">·</span> MIT License</p>
           </div>
-          <aside class="demo-panel" aria-label="Interactive terminal demo">
-            <div class="terminal">
-              <div class="terminal-topbar">
-                <span class="terminal-dot"></span><span class="terminal-dot"></span><span class="terminal-dot"></span>
-                <p class="terminal-title">skillforge.live.demo</p>
-              </div>
-              <div class="terminal-body"><pre id="terminal-output" aria-live="polite"></pre></div>
-            </div>
+          <aside class="demo-panel" aria-label="SkillForge demo video">
+            <video autoplay loop muted playsinline style="border-radius:12px;border:1px solid #2a2d35;width:100%;display:block;box-shadow:0 8px 40px rgba(0,0,0,0.5);">
+              <source src="demo.mp4" type="video/mp4" />
+              <img src="demo.gif" alt="SkillForge demo" style="width:100%;border-radius:12px;" />
+            </video>
           </aside>
         </section>
 
@@ -110,34 +107,35 @@
             <article class="feature-card"><h3>Creator-organized library</h3><p>Skills live at <code>~/.skillforge/library/@creator/topic/SKILL.md</code> — full attribution, provenance, and source videos tracked in every folder.</p></article>
             <article class="feature-card"><h3>MCP server built in</h3><p>Run <code>skillforge serve</code> to expose your library as an MCP server. Any MCP-compatible agent can query skills on demand.</p></article>
             <article class="feature-card"><h3>Long-form video ready</h3><p>Handles podcasts, lectures, and deep-dives up to 4+ hours. Every minute gets read — nothing skipped.</p></article>
+            <article class="feature-card"><h3>Build with what you learned</h3><p>Pipe any skill into Claude, GPT, or your agent: <code>skillforge recall "landing page" | claude "write copy using this"</code>. Watch YouTube become a landing page.</p></article>
           </div>
         </section>
 
         <section class="section built-for-agents">
           <div class="section-heading"><p class="eyebrow">Built for agents</p><h2>Output that fits the way agent memory actually works.</h2></div>
           <div class="snippet-shell">
-            <pre><code># ~/.skillforge/library/@ryan-clogg/scaling-high-ticket-to-10m/SKILL.md
+            <pre><code># ~/.skillforge/library/@alexhormozi/brutally-honest-landing-page-advice/SKILL.md
 
-name: "Scaling High-Ticket Coaching to $10.6M in 62 Days"
-creator: "Ryan Clogg"
-built_at: "2026-03-02"
+name: "Brutally Honest Landing Page Advice from Alex Hormozi"
+creator: "Alex Hormozi"
+built_at: "2026-03-03"
 source_videos: 1
 
 ## Frameworks
-- Multi-Funnel Acquisition Architecture
-- Department Lever Planning (marketing/sales/fulfillment/tech/people)
-- Revenue Math Model — backwards-plan from goal → closers → ad spend
+- Value Equation: Dream outcome + perceived likelihood + time + effort
+- PAS Framework: Problem → Agitate → Solve (drives 108% lead lift)
+- Above the Fold: 2 social proofs, headline, sub-headline, 1 CTA, 1 image
 
 ## Key Numbers
-- $161K/day to hit $5M/month
-- 25–30% close rate · 55–60% show rate
-- 42 closers needed at $120K/rep/month
-- $150–250 cost per booked call
+- 60-80% conversion lift from headline testing alone
+- 80-100% lift from visual proof vs text testimonials
+- 108% boost in leads from pain-first sequencing
+- 60% of visitors never scroll past above the fold
 
 ## For Your Agent
-When asked how to scale high-ticket revenue, use the
-Revenue Math Model: work backwards from target → 
-calculate reps needed → identify the bottleneck.</code></pre>
+When writing landing page copy: lead with benefit-first headlines,
+sequence content pain-first (PAS), use visual proof over text,
+and never waste above-the-fold space on who you are.</code></pre>
           </div>
         </section>
       </main>
@@ -155,29 +153,29 @@ calculate reps needed → identify the bottleneck.</code></pre>
                 <div class="creator-avatar">AH</div>
                 <div>
                   <p class="creator-handle">@AlexHormozi</p>
-                  <p class="creator-meta">4 skills · 12 videos ingested</p>
+                  <p class="creator-meta">4 skills · Built from real videos</p>
                 </div>
               </div>
               <ul class="skill-list">
                 <li class="skill-item skill-active">
                   <span class="skill-dot"></span>
-                  <span class="skill-name">sales-funnel-and-closing-framework</span>
-                  <span class="skill-count">5 videos</span>
+                  <span class="skill-name">13-years-of-marketing-advice</span>
+                  <span class="skill-count">5 frameworks · 7 tactics</span>
                 </li>
-                <li class="skill-item">
+                <li class="skill-item skill-active">
                   <span class="skill-dot"></span>
-                  <span class="skill-name">lead-qualification-playbook</span>
-                  <span class="skill-count">3 videos</span>
+                  <span class="skill-name">brutally-honest-landing-page-advice</span>
+                  <span class="skill-count">4 frameworks · 6 tactics</span>
                 </li>
                 <li class="skill-item">
                   <span class="skill-dot"></span>
                   <span class="skill-name">offer-creation-framework</span>
-                  <span class="skill-count">2 videos</span>
+                  <span class="skill-count">3 frameworks · 5 tactics</span>
                 </li>
                 <li class="skill-item">
                   <span class="skill-dot"></span>
-                  <span class="skill-name">cold-outreach-system</span>
-                  <span class="skill-count">2 videos</span>
+                  <span class="skill-name">lead-gen-and-acquisition-system</span>
+                  <span class="skill-count">4 frameworks · 8 tactics</span>
                 </li>
               </ul>
               <p class="creator-path"><code>~/.skillforge/library/@alexhormozi/</code></p>
@@ -191,7 +189,7 @@ calculate reps needed → identify the bottleneck.</code></pre>
       <footer class="site-footer" id="footer-cta">
         <div class="footer-card">
           <p class="eyebrow">Ready to teach your agent?</p>
-          <h2>Paste a URL. 3 minutes. Your agent has a skill it keeps forever.</h2>
+          <h2>Paste a URL. Watch a YouTube video become a skill your agent uses forever.</h2>
           <div class="hero-actions">
             <button class="button button-primary" onclick="openModal()">Get Started</button>
             <a class="button button-secondary" href="https://github.com/koren-source/skillforge" target="_blank" rel="noreferrer">View on GitHub</a>
