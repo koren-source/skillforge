@@ -60,6 +60,137 @@ async function cleanupOldCheckpoints() {
 }
 
 
+// ── Word-count chunking for large videos ────────────────────────────
+const WORD_CHUNK_THRESHOLD = 12000;
+const WORD_CHUNK_SIZE = 10000;
+
+function wordCount(text) {
+  return text.trim().split(/\s+/).length;
+}
+
+function chunkByWordCount(text, chunkSize = WORD_CHUNK_SIZE) {
+  const words = text.trim().split(/\s+/).filter(Boolean);
+  const chunks = [];
+  for (let i = 0; i < words.length; i += chunkSize) {
+    chunks.push(words.slice(i, i + chunkSize).join(" "));
+  }
+  return chunks;
+}
+
+function buildWordChunkPrompt(chunkText, chunkIndex, totalChunks, chapterTitle) {
+  const chapterLine = chapterTitle
+    ? `This chunk covers the chapter: "${chapterTitle}"\n`
+    : "";
+  return `
+You are synthesizing a segment of a long educational video transcript.
+This is chunk ${chunkIndex + 1} of ${totalChunks}.
+${chapterLine}
+Extract from this transcript segment:
+1. Core frameworks or mental models introduced
+2. Tactical advice or step-by-step processes
+3. Memorable quotes or key statements (with approximate context)
+4. Key terms or concepts defined
+
+Be specific. Preserve the speaker's exact language for quotes.
+Do not pad. If a section has nothing valuable, say so briefly.
+
+Return strict JSON only:
+{
+  "frameworks": [{"name": "string", "description": "string", "steps": ["string"]}],
+  "tactics": [{"name": "string", "description": "string", "when_to_use": "string"}],
+  "key_quotes": [{"quote": "string", "context": "string"}],
+  "key_numbers": [{"stat": "string", "significance": "string"}]
+}
+
+TRANSCRIPT SEGMENT:
+${chunkText}
+`.trim();
+}
+
+function buildWordChunkMergePrompt(videoTitle, chunkSummaries) {
+  const segments = chunkSummaries
+    .map((s, i) => `Segment ${i + 1}:\n${typeof s === "string" ? s : JSON.stringify(s, null, 2)}`)
+    .join("\n\n---\n\n");
+
+  return `
+You are producing a final structured skill document from ${chunkSummaries.length} synthesized segments of a long video.
+
+Source video: ${videoTitle}
+
+Synthesize the segments below into a single coherent document.
+
+Return strict JSON only with this exact schema:
+{
+  "topic": "string",
+  "summary": "2-3 sentence summary of what this video teaches",
+  "frameworks": [{"name": "string", "description": "string", "steps": ["string"]}],
+  "tactics": [{"name": "string", "description": "string", "when_to_use": "string"}],
+  "key_quotes": [{"quote": "string", "context": "string"}],
+  "key_numbers": [{"stat": "string", "significance": "string"}],
+  "agent_guidance": "How an AI agent should use this knowledge when helping users"
+}
+
+Rules:
+- Consolidate and deduplicate frameworks across all segments (same concept, different wording → best version).
+- Order tactics by importance, most impactful first.
+- Keep exact quotes with speaker context.
+- Write agent_guidance as a practical guide for an AI agent applying this knowledge.
+
+SEGMENT SUMMARIES:
+${segments}
+`.trim();
+}
+
+async function chunkedSynthesizePipeline({ transcripts, topic, model, slug }) {
+  const effectiveModel = model || getDefaultModel();
+  const combined = transcripts.map((t) => t.transcript).join("\n");
+  const totalWords = wordCount(combined);
+  const videoTitle = transcripts[0]?.title || "Unknown Video";
+
+  console.log(`[skillforge] Transcript downloaded: ${totalWords.toLocaleString()} words`);
+  console.log("[skillforge] Large video detected — entering chunked synthesis mode");
+
+  const chunks = chunkByWordCount(combined, WORD_CHUNK_SIZE);
+  const chunkSummaries = [];
+
+  for (let i = 0; i < chunks.length; i++) {
+    console.log(`[skillforge] Synthesizing chunk ${i + 1} of ${chunks.length}...`);
+    const prompt = buildWordChunkPrompt(chunks[i], i, chunks.length);
+
+    let parsed = null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const raw = await callProviderFromModule(prompt, effectiveModel);
+        parsed = JSON.parse(extractJson(raw));
+        break;
+      } catch (err) {
+        if (attempt === 1) {
+          console.warn(`[skillforge] Chunk ${i + 1}/${chunks.length} failed: ${err.message}`);
+        }
+      }
+    }
+
+    if (parsed) {
+      chunkSummaries.push(parsed);
+    } else {
+      chunkSummaries.push(`[SYNTHESIS FAILED — chunk ${i + 1}]`);
+    }
+
+    await saveCheckpoint(slug, { phase: "word-chunk", index: i, count: chunks.length });
+  }
+
+  console.log("[skillforge] Running merge pass...");
+  const validSummaries = chunkSummaries.filter((s) => typeof s !== "string");
+  if (validSummaries.length === 0) {
+    throw new Error("All chunk syntheses failed. Cannot produce skill document.");
+  }
+
+  const mergePrompt = buildWordChunkMergePrompt(videoTitle, validSummaries);
+  const result = await callProvider(mergePrompt, effectiveModel);
+  return result;
+}
+// ── end word-count chunking ─────────────────────────────────────────
+
 function chunkText(text, maxLength, overlap = 0) {
   if (text.length <= maxLength) {
     return [text];
@@ -375,8 +506,41 @@ async function synthesizeKnowledge({ transcripts, topic, model, intent, outputPa
     return normalized;
   }
 
+  // Word-count gate: route long transcripts through chunked pipeline
+  const allText = transcripts.map((t) => t.transcript).join("\n");
+  const totalWordCount = wordCount(allText);
+  if (totalWordCount > WORD_CHUNK_THRESHOLD) {
+    const result = await chunkedSynthesizePipeline({ transcripts, topic, model, slug });
+
+    await saveCheckpoint(slug, { result });
+    const normalized = normalizeSynthesis(result, transcripts, creatorMeta, effectiveModel);
+
+    if (intent) {
+      const indexEntry = {
+        name: normalized.topic,
+        slug,
+        domain: normalized.topic,
+        tags: normalized.frameworks.map((f) => f.name).slice(0, 5),
+        frameworks: normalized.frameworks.map((f) => f.name),
+        intent,
+        filePath: outputPath || "",
+        createdAt: normalized.generated_at,
+      };
+      if (creatorMeta?.creator) {
+        indexEntry.creator = creatorMeta.creator;
+        indexEntry.creatorSlug = creatorMeta.creatorSlug;
+        indexEntry.compositeSlug = `${creatorMeta.creatorSlug}/${slug}`;
+        indexEntry.sourceVideos = normalized.source_videos;
+      }
+      await skillIndex.add(indexEntry);
+    }
+
+    await removeCheckpoint(slug);
+    return normalized;
+  }
+
   // Check if transcript is too long — chunk and synthesize each, then merge
-  const combined = transcripts.map((t) => t.transcript).join("\n");
+  const combined = allText;
   const CHUNK_LIMIT = 25000;
   const CHUNK_OVERLAP = 2000;
 
@@ -615,4 +779,8 @@ export {
   previewTranscript,
   proposeIntents,
   callProviderRaw,
+  wordCount,
+  chunkByWordCount,
+  WORD_CHUNK_THRESHOLD,
+  WORD_CHUNK_SIZE,
 };
